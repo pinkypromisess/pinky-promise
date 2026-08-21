@@ -61,6 +61,7 @@ Creating a Report also creates a Block (reporter → reported user) as a side ef
 ## API surface by CUJ
 
 **CUJ #1 — Create Profile**
+- `POST /profile/photos/upload-url` — `{content_type}` → `{upload_url, object_url, expires_at}`. Client uploads raw photo bytes directly to `upload_url` (a short-lived signed GCS PUT URL, ~15min TTL), then registers the resulting `object_url` via `PUT /profile` or `PATCH /profile/photos` below. Object path is server-generated (`profile-photos/{user_id}/{uuid}.{ext}`), never client-supplied, so a user can't overwrite another user's photo by guessing a path. Signed using Cloud Run's service identity via IAM `signBlob` — no downloaded service account key in the container. **Known MVP gap:** nothing confirms the object actually exists in GCS before the backend accepts its URL into `photo_urls` — a broken or malicious client could register a URL that was never uploaded. Acceptable to skip validating for MVP, but flagged rather than silently absent.
 - `PUT /profile` — create/update profile (name, sex, age, "need to know", photos required; occupation, relationship_status optional). This same endpoint serves CUJ #7 (edit) — there's no separate create-vs-edit distinction needed, since Profile is 1:1 with User and always exists once created.
 - `PATCH /profile/photos` — add/replace/remove photos; server rejects if resulting count < 6; on success, sets `verified = false` unconditionally (any photo mutation invalidates verification, per CUJ #7)
 - `GET /profile/me`
