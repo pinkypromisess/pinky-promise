@@ -1,4 +1,4 @@
-# Pinky Promise — Core User Journeys (v0.7, confirmed)
+# Pinky Promise — Core User Journeys (v0.8, confirmed)
 
 ## CUJ #1: User creates a Profile
 
@@ -48,6 +48,10 @@ Any user can swipe through Proposals. Each one renders as a clean, whiteboard-st
 Actions per card:
 - **X** — not interested
 - **Heart** — interested *(requires verification — see CUJ #2)*
+
+**Card layout (confirmed):** photos and info fields alternate in a single vertical scroll within one card (photo → info block → photo → info block, etc.) rather than a separate horizontal photo carousel plus a text section — one continuous scroll axis per card.
+
+**Interaction model (confirmed):** X and Heart are fixed/sticky at the bottom of the screen throughout the scroll, so the user can act at any point without scrolling to the end. Advancing to the next Proposal only happens via X or Heart, never via a swipe gesture — this deliberately avoids any conflict between "scroll within this card" and "swipe to the next card," since there's no competing swipe-to-advance gesture to conflict with.
 
 ---
 
