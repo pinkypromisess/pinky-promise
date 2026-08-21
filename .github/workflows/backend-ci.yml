@@ -1,0 +1,121 @@
+name: Backend CI
+
+on:
+  push:
+
+env:
+  # Pinned to the version this backend was developed and locally verified
+  # against (see backend/Dockerfile, which builds the same version the
+  # same way). Bump both together.
+  DROGON_VERSION: v1.9.13
+
+jobs:
+  build-and-test:
+    name: Build & test backend/
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pinky_promise
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            git \
+            libssl-dev \
+            libpq-dev \
+            libjsoncpp-dev \
+            uuid-dev \
+            zlib1g-dev \
+            libc-ares-dev \
+            libbrotli-dev \
+            postgresql-client
+
+      # Building Drogon from source (Debian/Ubuntu don't package it, and
+      # the build needs Postgres support on) takes a few minutes, so cache
+      # the install prefix keyed on the pinned version — this step is
+      # skipped entirely on a cache hit.
+      - name: Cache Drogon build
+        id: cache-drogon
+        uses: actions/cache@v4
+        with:
+          path: ~/drogon-install
+          key: drogon-${{ env.DROGON_VERSION }}-${{ runner.os }}-v1
+
+      - name: Build and install Drogon
+        if: steps.cache-drogon.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "${DROGON_VERSION}" --depth 1 \
+            https://github.com/drogonframework/drogon.git /tmp/drogon
+          cd /tmp/drogon
+          git submodule update --init --depth 1
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_POSTGRESQL=ON -DBUILD_MYSQL=OFF -DBUILD_SQLITE=OFF -DBUILD_REDIS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$HOME/drogon-install"
+          cmake --build . -j"$(nproc)"
+          cmake --install .
+
+      # A failing configure or build step fails this step (and therefore
+      # the job) on its own — no extra handling needed for that half of
+      # "fail the job if build or any test fails".
+      - name: Configure backend
+        run: >
+          cmake -S backend -B backend/build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$HOME/drogon-install"
+
+      - name: Build backend
+        run: cmake --build backend/build -j"$(nproc)"
+
+      - name: Apply database migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in backend/migrations/*.sql; do
+            echo "Applying $f"
+            psql -h localhost -U postgres -d pinky_promise -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      # continue-on-error so the per-test summary step below still runs
+      # (and shows which tests failed) even when tests fail. The job is
+      # still failed explicitly by the last step, keyed off this step's
+      # recorded outcome.
+      - name: Run tests
+        id: run_tests
+        working-directory: backend/build
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: pinky_promise
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: ctest --output-on-failure --output-junit test-results.junit.xml
+        continue-on-error: true
+
+      - name: Print per-test summary
+        if: always()
+        run: python3 backend/test/print_test_summary.py backend/build/test-results.junit.xml backend/test
+
+      - name: Fail job if any test failed
+        if: steps.run_tests.outcome == 'failure'
+        run: |
+          echo "One or more tests failed — see the per-test summary above."
+          exit 1

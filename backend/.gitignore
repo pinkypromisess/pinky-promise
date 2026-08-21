@@ -1,0 +1,8 @@
+build/
+
+# Local secrets — DB_PASSWORD, JWT_SECRET, etc. are read from the
+# environment (see src/main.cc, src/auth/AuthFilter.cc); never commit a
+# file that sets real values for them.
+.env
+.env.*
+!.env.example

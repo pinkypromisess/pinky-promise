@@ -1,0 +1,409 @@
+openapi: 3.0.3
+info:
+  title: Pinky Promise API — Module A (Profile & Verification)
+  description: >
+    Endpoints owned by Module A: Profile & Verification. Covers CUJ #1 (create
+    profile), CUJ #2 (selfie verification), and CUJ #7 (edit profile). This file
+    is the source-of-truth contract for these routes — other modules should
+    build against these shapes rather than the implementation.
+  version: 0.1.0
+
+servers:
+  - url: https://api.pinkypromise.app/v1
+    description: Production (Cloud Run)
+  - url: http://localhost:8080/v1
+    description: Local dev
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Profile
+  - name: Verification
+
+paths:
+  /profile:
+    put:
+      tags: [Profile]
+      summary: Create or update the caller's profile
+      description: >
+        Upserts the authenticated user's Profile. Same endpoint serves both
+        CUJ #1 (first-time create) and CUJ #7 (edit) — Profile is 1:1 with
+        User, so there's no separate create-vs-edit distinction. This is a
+        full-state upsert: `photo_urls` is always required and must contain
+        at least 6 entries (send the current set unchanged if you're only
+        editing other fields). Submitting a `photo_urls` array that differs
+        from the currently stored set (by content or order) is treated the
+        same as `PATCH /profile/photos` for verification purposes: it sets
+        `verified = false`. Submitting the exact same set does not affect
+        `verified`. To edit photos incrementally without resending the full
+        list, use `PATCH /profile/photos` instead.
+      operationId: putProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpsertRequest'
+      responses:
+        '200':
+          description: Profile created or updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          description: Validation failure (missing required field, or fewer than 6 photos).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /profile/photos:
+    patch:
+      tags: [Profile]
+      summary: Add, replace, or remove photos on the caller's profile
+      description: >
+        Incremental photo edit. `remove` is applied before `add`. The
+        resulting photo count must be >= 6 or the whole request is rejected
+        and no change is persisted. On any successful change, `verified` is
+        unconditionally set to `false` (per CUJ #7 — any photo mutation
+        invalidates verification, since the original verification was scored
+        against the prior photo set). A no-op request (empty `add` and
+        `remove`) is rejected with 400 rather than silently succeeding.
+      operationId: patchProfilePhotos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoPatchRequest'
+      responses:
+        '200':
+          description: Photos updated; returns the full updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          description: >
+            Resulting photo count would be below 6, `remove` referenced a
+            photo id not on the profile, or the request was a no-op.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Caller has not created a profile yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /profile/me:
+    get:
+      tags: [Profile]
+      summary: Get the caller's own profile
+      description: >
+        Always returns the full profile shape (including `occupation` and
+        `relationship_status` regardless of any proposal's `revealed_fields`)
+        since this is the owner viewing their own data, not a bare/proposal
+        context view subject to CUJ #3's visibility rules.
+      operationId: getMyProfile
+      responses:
+        '200':
+          description: The caller's profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '404':
+          description: Caller has not created a profile yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /verification:
+    post:
+      tags: [Verification]
+      summary: Start a new verification attempt
+      description: >
+        Creates a new Verification attempt (`decision = pending`) for the
+        caller and starts a liveness session with the verification vendor
+        (e.g. AWS Rekognition Face Liveness). The mobile client uses the
+        returned `liveness_session_id` with the vendor's client SDK to
+        perform the actual in-app live capture — the capture itself does not
+        transit this backend. Once the client finishes the capture, poll
+        `GET /verification/status` to get the outcome: the server fetches the
+        liveness session result from the vendor, runs CompareFaces against
+        the caller's current profile photos, and finalizes `decision` based
+        on a confidence threshold. Rejected with 400 if the caller's profile
+        has fewer than 6 photos, since there is nothing to compare against.
+      operationId: startVerification
+      responses:
+        '201':
+          description: Verification attempt created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '400':
+          description: Profile does not exist yet, or has fewer than 6 photos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /verification/status:
+    get:
+      tags: [Verification]
+      summary: Get the status of the caller's most recent verification attempt
+      description: >
+        Returns the latest Verification row for the caller (a user can retry
+        after a `fail`, so this is always the newest attempt, not a specific
+        one by id). Intended for polling while `decision = pending`.
+      operationId: getVerificationStatus
+      responses:
+        '200':
+          description: Latest verification attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '404':
+          description: Caller has never submitted a verification attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Caller identity (`user_id`) is derived from the token's `sub` claim.
+        Every endpoint in this module operates on the authenticated caller —
+        there is no path parameter for user id.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code of the first violation.
+          example: PHOTO_MINIMUM_NOT_MET
+        message:
+          type: string
+          example: At least 6 photos are required.
+        details:
+          type: array
+          description: >
+            Every violation found, not just the first — lets a client fix
+            all fields in one round trip. Present only on 400 responses that
+            can have more than one cause (e.g. profile field validation).
+          items:
+            type: object
+            required: [error, message]
+            properties:
+              error:
+                type: string
+              message:
+                type: string
+
+    Sex:
+      type: string
+      enum: [male, female, non_binary, other]
+
+    RelationshipStatus:
+      type: string
+      enum: [single, married, married_open, married_separated, divorced, widowed]
+
+    Photo:
+      type: object
+      description: >
+        A single profile photo. `id` is stable across edits and is what
+        `PATCH /profile/photos`'s `remove` list references — GCS object URLs
+        may be signed/rotate, so removal must not rely on exact URL string
+        match.
+      required: [id, url, position]
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+          example: https://storage.googleapis.com/pinky-promise-photos/u_123/p_1.jpg
+        position:
+          type: integer
+          minimum: 0
+          description: Display order, 0 = primary photo.
+
+    Profile:
+      type: object
+      required:
+        - user_id
+        - name
+        - sex
+        - age
+        - need_to_know_text
+        - photos
+        - verified
+        - created_at
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        sex:
+          $ref: '#/components/schemas/Sex'
+        age:
+          type: integer
+          minimum: 18
+          maximum: 120
+        need_to_know_text:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: "\"One thing you absolutely need to know about me.\""
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Photo'
+          minItems: 6
+        occupation:
+          type: string
+          nullable: true
+          maxLength: 100
+        relationship_status:
+          allOf:
+            - $ref: '#/components/schemas/RelationshipStatus'
+          nullable: true
+        verified:
+          type: boolean
+          description: Mirrors the decision of the most recent passing Verification.
+        created_at:
+          type: string
+          format: date-time
+
+    ProfileUpsertRequest:
+      type: object
+      required: [name, sex, age, need_to_know_text, photo_urls]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        sex:
+          $ref: '#/components/schemas/Sex'
+        age:
+          type: integer
+          minimum: 18
+          maximum: 120
+        need_to_know_text:
+          type: string
+          minLength: 1
+          maxLength: 500
+        photo_urls:
+          type: array
+          description: >
+            Full ordered set of photo URLs (already uploaded to GCS by the
+            client beforehand). Must contain at least 6 entries. Order is
+            preserved as `position`; index 0 is the primary photo.
+          items:
+            type: string
+            format: uri
+          minItems: 6
+        occupation:
+          type: string
+          nullable: true
+          maxLength: 100
+        relationship_status:
+          allOf:
+            - $ref: '#/components/schemas/RelationshipStatus'
+          nullable: true
+
+    PhotoPatchRequest:
+      type: object
+      properties:
+        add:
+          type: array
+          description: New photo URLs to append, already uploaded to GCS.
+          items:
+            type: string
+            format: uri
+          default: []
+        remove:
+          type: array
+          description: Photo ids (from the current `Profile.photos`) to remove.
+          items:
+            type: string
+            format: uuid
+          default: []
+
+    VerificationDecision:
+      type: string
+      enum: [pending, pass, fail]
+
+    Verification:
+      type: object
+      required: [id, user_id, decision, submitted_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        decision:
+          $ref: '#/components/schemas/VerificationDecision'
+        liveness_session_id:
+          type: string
+          nullable: true
+          description: Vendor session id for the mobile client's liveness SDK call.
+        liveness_score:
+          type: number
+          format: float
+          nullable: true
+          minimum: 0
+          maximum: 100
+        face_match_score:
+          type: number
+          format: float
+          nullable: true
+          minimum: 0
+          maximum: 100
+        submitted_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true

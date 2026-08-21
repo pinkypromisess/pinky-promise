@@ -1,0 +1,11 @@
+{
+    "app": {
+        "threads_num": 0,
+        "enable_session": false,
+        "document_root": "./nonexistent_static_root",
+        "log": {
+            "log_path": "",
+            "log_level": "INFO"
+        }
+    }
+}
