@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "mobile",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Pinky Promise uses your camera for live selfie verification and to take profile photos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pinky Promise needs access to your photos so you can add them to your profile.",
+          "cameraPermission": "Pinky Promise uses your camera so you can take profile photos."
+        }
+      ]
+    ]
+  }
+}
