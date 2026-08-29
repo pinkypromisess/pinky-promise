@@ -1,0 +1,16 @@
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# VS Code "Local History" extension working dir — never part of the repo
+.lh/
+
+# Build output (backend has its own too; keep the root clean regardless)
+build/
+
+# Local env / secrets — real values live in the environment, never in-repo.
+# Module-level .gitignore files (backend/, mobile/) are the primary guard;
+# this is a belt-and-braces catch-all at the repo root.
+.env
+.env.*
+!.env.example

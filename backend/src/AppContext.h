@@ -4,8 +4,11 @@
 
 #include <memory>
 
+#include "services/PhotoUploadService.h"
 #include "services/ProfileService.h"
+#include "services/ProposalService.h"
 #include "services/VerificationService.h"
+#include "storage/GcsUploadUrlProvider.h"
 #include "verification/FaceVerificationProvider.h"
 
 // Tiny hand-rolled service locator. Controllers are constructed by
@@ -15,9 +18,12 @@
 namespace app_context
 {
 void init(drogon::orm::DbClientPtr db,
-          std::shared_ptr<verification::FaceVerificationProvider> provider);
+          std::shared_ptr<verification::FaceVerificationProvider> faceVerificationProvider,
+          std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider);
 
 services::ProfileService &profileService();
 services::VerificationService &verificationService();
+services::ProposalService &proposalService();
+services::PhotoUploadService &photoUploadService();
 
 }  // namespace app_context

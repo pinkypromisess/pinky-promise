@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include "../src/storage/StubGcsUploadUrlProvider.h"
 #include "../src/verification/StubFaceVerificationProvider.h"
 
 // Boots the real Drogon app — actual registered routes (ProfileController,
@@ -28,6 +29,11 @@ std::string ensureTestServerRunning();
 // from a test. Only valid after ensureTestServerRunning() has been called
 // at least once.
 std::shared_ptr<verification::StubFaceVerificationProvider> testServerVerificationProvider();
+
+// The StubGcsUploadUrlProvider instance actually wired into the running
+// test server. Only valid after ensureTestServerRunning() has been called
+// at least once.
+std::shared_ptr<storage::StubGcsUploadUrlProvider> testServerPhotoUploadProvider();
 
 // Signs an HS256 JWT with `userId` as the `sub` claim, using the same
 // secret auth::AuthFilter falls back to when JWT_SECRET isn't set

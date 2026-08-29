@@ -126,4 +126,28 @@ void ProfileController::getMyProfile(const HttpRequestPtr &req,
     }
 }
 
+void ProfileController::createPhotoUploadUrl(
+    const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback)
+{
+    auto jsonBody = req->getJsonObject();
+    if (!jsonBody)
+    {
+        callback(errorResponse(k400BadRequest, "INVALID_BODY", "Request body must be JSON."));
+        return;
+    }
+
+    const auto userId = getUserId(req);
+    const auto contentType = jsonBody->get("content_type", "").asString();
+
+    try
+    {
+        auto upload = app_context::photoUploadService().createUploadUrl(userId, contentType);
+        callback(jsonResponse(upload.toJson(), k200OK));
+    }
+    catch (const services::ValidationFailedException &e)
+    {
+        callback(validationErrorResponse(e.errors));
+    }
+}
+
 }  // namespace controllers

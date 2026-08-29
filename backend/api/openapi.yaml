@@ -1,12 +1,21 @@
 openapi: 3.0.3
 info:
-  title: Pinky Promise API — Module A (Profile & Verification)
+  title: Pinky Promise API
   description: >
-    Endpoints owned by Module A: Profile & Verification. Covers CUJ #1 (create
-    profile), CUJ #2 (selfie verification), and CUJ #7 (edit profile). This file
-    is the source-of-truth contract for these routes — other modules should
-    build against these shapes rather than the implementation.
-  version: 0.1.0
+    Source-of-truth contract for the Pinky Promise backend, built by
+    multiple parallel module owners against this shared file — each module
+    only adds/extends its own paths and schemas here.
+
+
+    **Module A: Profile & Verification.** Covers CUJ #1 (create profile),
+    CUJ #2 (selfie verification), and CUJ #7 (edit profile).
+
+
+    **Module B: Proposals & Feed.** Covers CUJ #1's proposal-specific
+    fields, CUJ #3's browse/feed (not the swipe write endpoint — see
+    `POST /proposals/{id}/swipe`'s note, owned by Module C), CUJ #8
+    (delete), and CUJ #9 (recreate, which reuses `POST /proposals`).
+  version: 0.2.0
 
 servers:
   - url: https://api.pinkypromise.app/v1
@@ -20,6 +29,7 @@ security:
 tags:
   - name: Profile
   - name: Verification
+  - name: Proposal
 
 paths:
   /profile:
@@ -104,6 +114,51 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /profile/photos/upload-url:
+    post:
+      tags: [Profile]
+      summary: Get a signed URL to upload a profile photo directly to GCS
+      description: >
+        Returns a short-lived (~15 minute) signed URL the client PUTs the
+        raw photo bytes to directly — the photo itself never transits this
+        backend. The resulting GCS object path
+        (`profile-photos/{user_id}/{uuid}.{ext}`) is entirely
+        server-derived: `{user_id}` comes from the authenticated caller,
+        `{uuid}` is freshly generated per call, and `{ext}` is looked up
+        from `content_type` against a fixed allowlist — none of it is
+        client-supplied. Once the client's PUT to `upload_url` succeeds,
+        pass `object_url` to `PUT /profile` (in `photo_urls`) or
+        `PATCH /profile/photos` (in `add`) to actually attach it to the
+        profile; this endpoint only reserves the object path and a
+        signature, it does not touch the Profile.
+
+
+        Signed server-side using this Cloud Run service's own identity via
+        the IAM Credentials API's `signBlob` method — no downloaded
+        service account key is used or stored.
+      operationId: createProfilePhotoUploadUrl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoUploadUrlRequest'
+      responses:
+        '200':
+          description: Signed upload URL created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoUploadUrlResponse'
+        '400':
+          description: content_type is missing or not one of the supported photo types.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /profile/me:
     get:
       tags: [Profile]
@@ -181,6 +236,144 @@ paths:
                 $ref: '#/components/schemas/Verification'
         '404':
           description: Caller has never submitted a verification attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /proposals:
+    post:
+      tags: [Proposal]
+      summary: Create a Proposal
+      description: >
+        Creates a Proposal for the caller (CUJ #1's proposal-specific
+        fields, CUJ #3's posting gate). Rejected with 403 if the caller's
+        Profile is missing, unverified (`verified = false`), or has fewer
+        than 6 photos — verification and photo edits both live in Module A,
+        but this endpoint independently enforces the gate at post time
+        rather than trusting the `verified` flag alone, since photo count
+        is a live minimum, not a one-time check. `revealed_fields` may only
+        name fields the caller's profile actually has filled in (e.g.
+        `occupation` is rejected with 400 if the caller never set an
+        occupation) — this is the same visibility rule enforced on read by
+        every feed/card response.
+      operationId: createProposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProposalCreateRequest'
+      responses:
+        '201':
+          description: Proposal created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '400':
+          description: >
+            Validation failure — missing/invalid field, or a
+            `revealed_fields` entry the caller's profile doesn't have
+            filled in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Caller's profile is missing, unverified, or has fewer than 6 photos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /proposals/feed:
+    get:
+      tags: [Proposal]
+      summary: Browse active Proposals (CUJ #3)
+      description: >
+        Returns active Proposals for the caller to swipe through, excluding
+        the caller's own. No verification is required to browse (per CUJ
+        #2 — only Hearting and posting are gated). MVP ranking is distance
+        + recency: pass `lat`/`lng` for the caller's current position to
+        rank by distance ascending (recency as tiebreaker); omit both to
+        rank by recency alone. Each item's `creator` profile is computed
+        per that specific Proposal's `revealed_fields` — `occupation` and
+        `relationship_status` are `null` unless the creator both filled
+        them in and chose to reveal them on this Proposal.
+
+
+        **Known gaps, flagged rather than silently built around:** this
+        does not yet exclude proposals the caller has already swiped on
+        (needs Module C's `swipes` table, which doesn't exist in this repo
+        yet) or proposals from blocked/blocking creators (needs Module E's
+        `blocks` table, also not landed yet). Both exclusions are marked
+        with `TODO` comments at the exact join point in
+        `ProposalService::getFeed` and should be wired in once those
+        tables exist.
+      operationId: getProposalsFeed
+      parameters:
+        - name: lat
+          in: query
+          required: false
+          description: Caller's current latitude, for distance ranking. Must be paired with `lng`.
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+        - name: lng
+          in: query
+          required: false
+          description: Caller's current longitude, for distance ranking. Must be paired with `lat`.
+          schema:
+            type: number
+            format: double
+            minimum: -180
+            maximum: 180
+      responses:
+        '200':
+          description: Feed page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalFeedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /proposals/{id}:
+    delete:
+      tags: [Proposal]
+      summary: Delete (cancel) a Proposal
+      description: >
+        Creator-only. Allowed regardless of the Proposal's current status,
+        including one with a confirmed Pinky Promise (CUJ #8). Sets
+        `status = cancelled`.
+
+
+        **Cascade not yet implemented:** per the entities doc, this should
+        also close any open Conversations and cancel a confirmed
+        PinkyPromise/reminder in the same transaction — those are Module
+        C's tables/jobs and don't exist in this repo yet, so for now this
+        endpoint only flips `Proposal.status`. Flagged with a `TODO`
+        comment at the exact spot in `ProposalService::deleteProposal`.
+      operationId: deleteProposal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Proposal cancelled.
+        '404':
+          description: No such Proposal, or the caller isn't its creator.
           content:
             application/json:
               schema:
@@ -368,6 +561,46 @@ components:
             format: uuid
           default: []
 
+    PhotoContentType:
+      type: string
+      enum: [image/jpeg, image/png, image/webp]
+      description: >
+        Supported photo formats for upload. HEIC (common on iOS) isn't
+        supported yet — the client is expected to convert before
+        uploading.
+
+    PhotoUploadUrlRequest:
+      type: object
+      required: [content_type]
+      properties:
+        content_type:
+          $ref: '#/components/schemas/PhotoContentType'
+
+    PhotoUploadUrlResponse:
+      type: object
+      required: [upload_url, object_url, expires_at]
+      properties:
+        upload_url:
+          type: string
+          format: uri
+          description: >
+            Signed URL, valid for ~15 minutes. The client's PUT here must
+            use a Content-Type header exactly matching the request's
+            `content_type` — the signature is bound to that header, so a
+            mismatch makes GCS reject the upload.
+        object_url:
+          type: string
+          format: uri
+          description: >
+            The object's permanent URL, unaffected by `upload_url`'s
+            expiry. Once the client confirms the PUT succeeded, this is
+            the value to pass to `PUT /profile` (`photo_urls`) or
+            `PATCH /profile/photos` (`add`).
+        expires_at:
+          type: string
+          format: date-time
+          description: When `upload_url`'s signature expires (~15 minutes from generation).
+
     VerificationDecision:
       type: string
       enum: [pending, pass, fail]
@@ -407,3 +640,156 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    PaymentType:
+      type: string
+      enum: [split, host_treats, guest_treats, tbd]
+      description: >
+        Maps to CUJ #1's "split / I'm treating / we'll figure it out /
+        you're treating" — `host_treats` = the creator is treating,
+        `guest_treats` = the other party is treating.
+
+    ProposalStatus:
+      type: string
+      enum: [active, pinky_promised, cancelled, expired]
+
+    RevealableField:
+      type: string
+      enum: [occupation, relationship_status]
+      description: The only two Profile fields a Proposal can choose to reveal.
+
+    Location:
+      type: object
+      required: [lat, lng, address]
+      properties:
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        address:
+          type: string
+          maxLength: 300
+
+    ProposalCreateRequest:
+      type: object
+      required: [activity_text, event_time, location, payment_type, looking_for_text]
+      properties:
+        activity_text:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: "\"I would love to [ ______ ]\""
+        event_time:
+          type: string
+          format: date-time
+        location:
+          $ref: '#/components/schemas/Location'
+        payment_type:
+          $ref: '#/components/schemas/PaymentType'
+        looking_for_text:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: "\"I'm looking for someone who [ ______ ] to join me\""
+        revealed_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevealableField'
+          default: []
+          description: Must only name fields the caller's profile has filled in.
+
+    Proposal:
+      type: object
+      required:
+        - id
+        - creator_user_id
+        - activity_text
+        - event_time
+        - location
+        - payment_type
+        - looking_for_text
+        - revealed_fields
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        creator_user_id:
+          type: string
+          format: uuid
+        activity_text:
+          type: string
+        event_time:
+          type: string
+          format: date-time
+        location:
+          $ref: '#/components/schemas/Location'
+        payment_type:
+          $ref: '#/components/schemas/PaymentType'
+        looking_for_text:
+          type: string
+        revealed_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevealableField'
+        status:
+          $ref: '#/components/schemas/ProposalStatus'
+        created_at:
+          type: string
+          format: date-time
+
+    ProposalCardCreatorProfile:
+      type: object
+      description: >
+        The subset of the creator's Profile shown on a feed card, computed
+        per that specific Proposal's `revealed_fields` (see the entities
+        doc's visibility rule). Always includes the required-to-create
+        Profile fields (name/sex/age/need_to_know_text/photos);
+        `occupation`/`relationship_status` are `null` unless both filled
+        in on the creator's profile and revealed on this Proposal.
+      required: [name, sex, age, need_to_know_text, photos, occupation, relationship_status]
+      properties:
+        name:
+          type: string
+        sex:
+          $ref: '#/components/schemas/Sex'
+        age:
+          type: integer
+        need_to_know_text:
+          type: string
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Photo'
+        occupation:
+          type: string
+          nullable: true
+        relationship_status:
+          allOf:
+            - $ref: '#/components/schemas/RelationshipStatus'
+          nullable: true
+
+    ProposalFeedItem:
+      type: object
+      required: [proposal, creator]
+      properties:
+        proposal:
+          $ref: '#/components/schemas/Proposal'
+        creator:
+          $ref: '#/components/schemas/ProposalCardCreatorProfile'
+
+    ProposalFeedResponse:
+      type: object
+      required: [proposals]
+      properties:
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposalFeedItem'

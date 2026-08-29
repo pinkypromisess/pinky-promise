@@ -21,11 +21,20 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/auth/JwtAuth.cc
     ${CMAKE_SOURCE_DIR}/src/auth/AuthFilter.cc
     ${CMAKE_SOURCE_DIR}/src/validation/ProfileValidation.cc
+    ${CMAKE_SOURCE_DIR}/src/validation/ProposalValidation.cc
+    ${CMAKE_SOURCE_DIR}/src/validation/PhotoUploadValidation.cc
     ${CMAKE_SOURCE_DIR}/src/verification/StubFaceVerificationProvider.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/TimeUtils.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/GcsV4Signing.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/StubGcsUploadUrlProvider.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/GcsSignBlobUploadUrlProvider.cc
     ${CMAKE_SOURCE_DIR}/src/services/ProfileService.cc
     ${CMAKE_SOURCE_DIR}/src/services/VerificationService.cc
+    ${CMAKE_SOURCE_DIR}/src/services/ProposalService.cc
+    ${CMAKE_SOURCE_DIR}/src/services/PhotoUploadService.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProfileController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/VerificationController.cc
+    ${CMAKE_SOURCE_DIR}/src/controllers/ProposalController.cc
 )
 
 add_executable(pinky_promise_backend src/main.cc ${CORE_SOURCES})

@@ -4,6 +4,7 @@
 #include <string>
 
 #include "AppContext.h"
+#include "storage/StubGcsUploadUrlProvider.h"
 #include "verification/StubFaceVerificationProvider.h"
 
 namespace
@@ -61,8 +62,13 @@ int main(int argc, char *argv[])
         // TODO: swap for verification::RekognitionFaceVerificationProvider
         // once AWS credentials are provisioned for this environment. The
         // stub keeps the app runnable end-to-end without them.
-        auto provider = std::make_shared<verification::StubFaceVerificationProvider>();
-        app_context::init(drogon::app().getDbClient(), provider);
+        auto faceProvider = std::make_shared<verification::StubFaceVerificationProvider>();
+        // TODO: swap for storage::GcsSignBlobUploadUrlProvider (already
+        // implemented, see src/storage/) once deployed to Cloud Run —
+        // nothing in local dev/CI can reach the metadata server or IAM
+        // API it depends on.
+        auto photoUploadProvider = std::make_shared<storage::StubGcsUploadUrlProvider>();
+        app_context::init(drogon::app().getDbClient(), faceProvider, photoUploadProvider);
         LOG_INFO << "Module A (Profile & Verification) initialized.";
     });
 

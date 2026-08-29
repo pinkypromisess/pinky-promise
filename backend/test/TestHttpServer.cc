@@ -22,6 +22,7 @@ constexpr unsigned short kTestServerPort = 8199;
 constexpr const char *kTestJwtSecret = "local-dev-insecure-secret";
 
 std::shared_ptr<verification::StubFaceVerificationProvider> sharedProvider;
+std::shared_ptr<storage::StubGcsUploadUrlProvider> sharedPhotoUploadProvider;
 
 std::string base64UrlEncode(const std::string &data)
 {
@@ -68,7 +69,8 @@ std::string ensureTestServerRunning()
         db->execSqlSync("SELECT 1");
 
         sharedProvider = std::make_shared<verification::StubFaceVerificationProvider>();
-        app_context::init(db, sharedProvider);
+        sharedPhotoUploadProvider = std::make_shared<storage::StubGcsUploadUrlProvider>();
+        app_context::init(db, sharedProvider, sharedPhotoUploadProvider);
 
         std::promise<void> ready;
         auto readyFuture = ready.get_future();
@@ -89,6 +91,11 @@ std::string ensureTestServerRunning()
 std::shared_ptr<verification::StubFaceVerificationProvider> testServerVerificationProvider()
 {
     return sharedProvider;
+}
+
+std::shared_ptr<storage::StubGcsUploadUrlProvider> testServerPhotoUploadProvider()
+{
+    return sharedPhotoUploadProvider;
 }
 
 std::string signTestJwt(const std::string &userId)
