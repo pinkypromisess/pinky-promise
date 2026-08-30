@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "services/ConversationService.h"
 #include "services/PhotoUploadService.h"
 #include "services/ProfileService.h"
 #include "services/ProposalService.h"
@@ -27,5 +28,6 @@ services::VerificationService &verificationService();
 services::ProposalService &proposalService();
 services::PhotoUploadService &photoUploadService();
 services::SwipeService &swipeService();
+services::ConversationService &conversationService();
 
 }  // namespace app_context

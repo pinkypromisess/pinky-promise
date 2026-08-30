@@ -51,6 +51,10 @@ class SwipeService
     //  - SwipeConflictException (409, ALREADY_SWIPED) if this
     //    (proposal, user) pair already has a swipe row.
     //
+    // On a successful `interested` swipe this also opens the Conversation
+    // for (proposal, A = creator, B = swiper) in the SAME atomic
+    // statement (CUJ #4), idempotently. A `pass` swipe opens none.
+    //
     // `action` is assumed already validated to be "interested" | "pass".
     Swipe recordSwipe(const std::string &swiperUserId,
                        const std::string &proposalId,

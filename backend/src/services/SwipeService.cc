@@ -121,14 +121,42 @@ Swipe SwipeService::recordSwipe(const std::string &swiperUserId,
     // ...and still rely on the UNIQUE constraint as the real guard: the
     // pre-check above races with a concurrent request, so map a 23505 from
     // the INSERT to the same 409 rather than surfacing a 500.
+    //
+    // For an `interested` swipe, opening the Conversation (CUJ #4) is
+    // folded into the SAME statement via data-modifying CTEs: the swipe
+    // row and its conversation row are written all-or-nothing, so they
+    // can never diverge. The conversations table is owned by
+    // migration 007 / ConversationService; this is the one write to it
+    // from outside that service. ON CONFLICT DO NOTHING makes the
+    // conversation insert idempotent (the swipe UNIQUE constraint already
+    // prevents a real duplicate, but this keeps a retry harmless). A
+    // `pass` swipe opens no conversation.
     try
     {
-        auto inserted = db_->execSqlSync(
-            "INSERT INTO swipes (proposal_id, swiper_user_id, action) VALUES ($1, $2, $3) "
-            "RETURNING id, proposal_id, action, created_at",
-            proposalId,
-            swiperUserId,
-            action);
+        drogon::orm::Result inserted =
+            (action == "interested")
+                ? db_->execSqlSync(
+                      "WITH new_swipe AS ("
+                      "  INSERT INTO swipes (proposal_id, swiper_user_id, action) "
+                      "  VALUES ($1, $2, 'interested') "
+                      "  RETURNING id, proposal_id, action, created_at"
+                      "), new_conversation AS ("
+                      "  INSERT INTO conversations "
+                      "    (proposal_id, proposer_user_id, interested_user_id, last_activity_at) "
+                      "  SELECT $1, $3, $2, now() FROM new_swipe "
+                      "  ON CONFLICT (proposal_id, interested_user_id) DO NOTHING"
+                      ") "
+                      "SELECT id, proposal_id, action, created_at FROM new_swipe",
+                      proposalId,
+                      swiperUserId,
+                      creatorUserId)
+                : db_->execSqlSync(
+                      "INSERT INTO swipes (proposal_id, swiper_user_id, action) "
+                      "VALUES ($1, $2, $3) "
+                      "RETURNING id, proposal_id, action, created_at",
+                      proposalId,
+                      swiperUserId,
+                      action);
 
         const auto &row = inserted[0];
         Swipe swipe;

@@ -11,6 +11,7 @@ std::unique_ptr<services::VerificationService> verificationServiceInstance;
 std::unique_ptr<services::ProposalService> proposalServiceInstance;
 std::unique_ptr<services::PhotoUploadService> photoUploadServiceInstance;
 std::unique_ptr<services::SwipeService> swipeServiceInstance;
+std::unique_ptr<services::ConversationService> conversationServiceInstance;
 
 }  // namespace
 
@@ -21,6 +22,7 @@ void init(drogon::orm::DbClientPtr db,
     profileServiceInstance = std::make_unique<services::ProfileService>(db);
     proposalServiceInstance = std::make_unique<services::ProposalService>(db);
     swipeServiceInstance = std::make_unique<services::SwipeService>(db);
+    conversationServiceInstance = std::make_unique<services::ConversationService>(db);
     verificationServiceInstance = std::make_unique<services::VerificationService>(
         std::move(db), std::move(faceVerificationProvider));
     photoUploadServiceInstance =
@@ -72,6 +74,16 @@ services::SwipeService &swipeService()
         throw std::runtime_error("app_context::init() was not called before swipeService()");
     }
     return *swipeServiceInstance;
+}
+
+services::ConversationService &conversationService()
+{
+    if (!conversationServiceInstance)
+    {
+        throw std::runtime_error(
+            "app_context::init() was not called before conversationService()");
+    }
+    return *conversationServiceInstance;
 }
 
 }  // namespace app_context

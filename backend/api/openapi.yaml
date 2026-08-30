@@ -30,6 +30,7 @@ tags:
   - name: Profile
   - name: Verification
   - name: Proposal
+  - name: Conversation
 
 paths:
   /profile:
@@ -452,6 +453,134 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: The caller has already swiped on this Proposal (`ALREADY_SWIPED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations:
+    get:
+      tags: [Conversation]
+      summary: List the caller's conversations (CUJ #4)
+      description: >
+        Every Conversation where the caller is the proposer (`A`) or the
+        interested user (`B`), most-recent `last_activity_at` first. A
+        Conversation is opened automatically when a user swipes
+        `interested` on a Proposal (see `POST /proposals/{id}/swipe`);
+        there is no endpoint to create one directly.
+
+
+        Each item carries a server-**computed** `expires_at` (never a
+        stored ticking value): 3 days from creation if `A` has not replied;
+        otherwise 12h from `A`'s first reply, +1 minute per consecutive
+        same-sender message and +2 hours each time the other side breaks
+        silence, hard-capped at 3 days from creation. It is `null` once the
+        Conversation is `pinky_promised`.
+      operationId: listConversations
+      responses:
+        '200':
+          description: The caller's conversations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations/{id}:
+    get:
+      tags: [Conversation]
+      summary: Get a single conversation
+      description: >
+        Returns the Conversation with its computed `expires_at` (see
+        `GET /conversations`). 404 if no such Conversation (or a malformed
+        id); 403 `NOT_A_PARTICIPANT` if the caller is neither `A` nor `B`.
+      operationId: getConversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '403':
+          description: The caller is not a participant (`NOT_A_PARTICIPANT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations/{id}/messages:
+    post:
+      tags: [Conversation]
+      summary: Post a message to a conversation
+      description: >
+        Appends a text or voice message. The caller must be `A` or `B`
+        (else 403 `NOT_A_PARTICIPANT`); 404 if the Conversation doesn't
+        exist. Rejected with 409 `CONVERSATION_EXPIRED` when the
+        Conversation's **computed** status is expired (now past its
+        computed `expires_at`) -- a `pinky_promised` Conversation is never
+        expired and always accepts messages. On success the message is
+        stored and the Conversation's `last_activity_at` / `last_sender_id`
+        are advanced to this message.
+      operationId: postConversationMessage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageRequest'
+      responses:
+        '201':
+          description: Message stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          description: '`type` missing/invalid, or `content` missing/blank.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not a participant (`NOT_A_PARTICIPANT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The conversation has expired (`CONVERSATION_EXPIRED`).
           content:
             application/json:
               schema:
@@ -898,6 +1027,111 @@ components:
           format: uuid
         action:
           $ref: '#/components/schemas/SwipeAction'
+        created_at:
+          type: string
+          format: date-time
+
+    ConversationStatus:
+      type: string
+      enum: [active, pinky_promised, expired]
+      description: >
+        Stored status. `expired` exists for a future cleanup job only --
+        the API's expiry decision is always the COMPUTED `expires_at`, not
+        this field.
+
+    MessageType:
+      type: string
+      enum: [text, voice]
+
+    Conversation:
+      type: object
+      required:
+        - id
+        - proposal_id
+        - proposer_user_id
+        - interested_user_id
+        - last_activity_at
+        - last_sender_id
+        - status
+        - created_at
+        - expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        proposer_user_id:
+          type: string
+          format: uuid
+          description: '"A" -- the proposal''s creator.'
+        interested_user_id:
+          type: string
+          format: uuid
+          description: '"B" -- the user who swiped `interested`.'
+        last_activity_at:
+          type: string
+          format: date-time
+        last_sender_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Sender of the most recent message; `null` until the first message.
+        status:
+          $ref: '#/components/schemas/ConversationStatus'
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Server-computed on read (see `GET /conversations`). `null` when
+            `status` is `pinky_promised`.
+
+    ConversationListResponse:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+
+    MessageRequest:
+      type: object
+      required: [type, content]
+      properties:
+        type:
+          $ref: '#/components/schemas/MessageType'
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: >
+            The message text (for a text message) or the audio object URL
+            (for a voice message).
+
+    Message:
+      type: object
+      required: [id, conversation_id, sender_user_id, type, content, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        sender_user_id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/MessageType'
+        content:
+          type: string
+          description: Echoes the stored `content_or_url`.
         created_at:
           type: string
           format: date-time
