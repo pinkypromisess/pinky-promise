@@ -45,6 +45,19 @@ DROGON_TEST(PinkyPromisedHasNoExpiry)
     CHECK(!computeConversationExpiry(tp(1000), "pinky_promised", A, msgs).has_value());
 }
 
+// CHECKS: an explicitly-closed conversation (stored status "expired",
+// e.g. sibling closure at PinkyPromise confirm) reports its expiry as its
+// creation time -- already over -- regardless of messages.
+DROGON_TEST(StoredExpiredStatusIsAlreadyOver)
+{
+    const long long created = 100 * DAY;
+    std::vector<ExpiryInputMessage> msgs{{A, tp(created + 60)}, {B, tp(created + 120)}};
+
+    auto exp = computeConversationExpiry(tp(created), "expired", A, msgs);
+    REQUIRE(exp.has_value());
+    CHECK(secs(*exp) == created);
+}
+
 // CHECKS: if A never replies, expiry is exactly created_at + 3 days
 // (messages B sent "into the void" do not start the 12h clock).
 DROGON_TEST(ANeverRepliedIsFlatThreeDays)

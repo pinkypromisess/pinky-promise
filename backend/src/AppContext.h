@@ -6,6 +6,7 @@
 
 #include "services/ConversationService.h"
 #include "services/PhotoUploadService.h"
+#include "services/PinkyPromiseService.h"
 #include "services/ProfileService.h"
 #include "services/ProposalService.h"
 #include "services/SwipeService.h"
@@ -29,5 +30,6 @@ services::ProposalService &proposalService();
 services::PhotoUploadService &photoUploadService();
 services::SwipeService &swipeService();
 services::ConversationService &conversationService();
+services::PinkyPromiseService &pinkyPromiseService();
 
 }  // namespace app_context

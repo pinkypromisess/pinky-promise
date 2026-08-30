@@ -26,6 +26,18 @@ std::optional<Clock::time_point> computeConversationExpiry(
         return std::nullopt;
     }
 
+    // An explicitly-closed conversation (e.g. a sibling closed when
+    // another conversation on the same proposal reached a confirmed Pinky
+    // Promise -- migration 008 / PinkyPromiseService) is already over:
+    // report its expiry as its creation time so both GET (`expires_at` in
+    // the past) and POST (the `now > expires_at` guard) treat it as
+    // expired. The time-decay formula below still owns the *live* case;
+    // this only short-circuits a terminal stored status.
+    if (status == "expired")
+    {
+        return conversationCreatedAt;
+    }
+
     const auto hardCap = conversationCreatedAt + kMaxLifetime;
 
     // Find the index of A's first message (plain loop -- no lambda).

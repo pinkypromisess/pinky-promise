@@ -75,7 +75,7 @@ std::optional<ConversationService::ConversationRow> ConversationService::loadCon
 
     auto rows = db_->execSqlSync(
         "SELECT id, proposal_id, proposer_user_id, interested_user_id, last_activity_at, "
-        "last_sender_id, status, created_at, EXTRACT(EPOCH FROM created_at)::bigint AS "
+        "last_sender_id, status, created_at, FLOOR(EXTRACT(EPOCH FROM created_at))::bigint AS "
         "created_at_epoch FROM conversations WHERE id = $1",
         conversationId);
     if (rows.empty())
@@ -89,7 +89,7 @@ std::vector<ExpiryInputMessage> ConversationService::loadExpiryMessages(
     const std::string &conversationId)
 {
     auto rows = db_->execSqlSync(
-        "SELECT sender_user_id, EXTRACT(EPOCH FROM created_at)::bigint AS created_at_epoch "
+        "SELECT sender_user_id, FLOOR(EXTRACT(EPOCH FROM created_at))::bigint AS created_at_epoch "
         "FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
         conversationId);
 
@@ -128,7 +128,7 @@ std::vector<ConversationView> ConversationService::listForUser(const std::string
 {
     auto rows = db_->execSqlSync(
         "SELECT id, proposal_id, proposer_user_id, interested_user_id, last_activity_at, "
-        "last_sender_id, status, created_at, EXTRACT(EPOCH FROM created_at)::bigint AS "
+        "last_sender_id, status, created_at, FLOOR(EXTRACT(EPOCH FROM created_at))::bigint AS "
         "created_at_epoch FROM conversations "
         "WHERE proposer_user_id = $1 OR interested_user_id = $1 "
         "ORDER BY last_activity_at DESC",

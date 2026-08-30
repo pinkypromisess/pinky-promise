@@ -31,6 +31,7 @@ tags:
   - name: Verification
   - name: Proposal
   - name: Conversation
+  - name: PinkyPromise
 
 paths:
   /profile:
@@ -588,6 +589,121 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /conversations/{id}/pinky-promise:
+    post:
+      tags: [PinkyPromise]
+      summary: Initiate a Pinky Promise on a conversation (A taps the button)
+      description: >
+        Only the conversation's proposer ("A") may call this. Creates a
+        PinkyPromise in `pending_b_confirm` for `(proposal, A, B)` where B
+        is the conversation's interested user. This does **not** stop the
+        conversation's expiry clock -- per CUJ #4 the un-timed state kicks
+        in only at `confirmed`, not at `pending_b_confirm`.
+
+
+        The 3-concurrent cap is a confirm-time check, not enforced here.
+      operationId: initiatePinkyPromise
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: PinkyPromise created in `pending_b_confirm`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinkyPromise'
+        '403':
+          description: >
+            Caller is the interested user, not the proposer
+            (`NOT_INITIATOR`), or not a participant at all
+            (`NOT_A_PARTICIPANT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such conversation (`CONVERSATION_NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            The conversation is already pinky-promised
+            (`ALREADY_PINKY_PROMISED`), has expired (`CONVERSATION_EXPIRED`),
+            or already has a live PinkyPromise (`PINKY_PROMISE_EXISTS`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /pinky-promises/{id}/confirm:
+    post:
+      tags: [PinkyPromise]
+      summary: Confirm a Pinky Promise (B taps back)
+      description: >
+        Only `user_b_id` of the PinkyPromise may confirm, and only while it
+        is `pending_b_confirm`. Enforces the "at most 3 active
+        Pinky-Promised events" rule against **both** parties: if either A or
+        B already has 3 `confirmed` PinkyPromises whose proposal
+        `event_time` is in the future, the request is rejected with
+        `PINKY_PROMISE_CAP_REACHED`.
+
+
+        On success, in one atomic step: this PinkyPromise ->
+        `confirmed` (+ `confirmed_at`); its Proposal -> `pinky_promised`;
+        its winning Conversation -> `pinky_promised` (which stops its
+        expiry); every other still-`active` Conversation on the same
+        Proposal -> `expired` (CUJ #4 sibling closure).
+      operationId: confirmPinkyPromise
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: PinkyPromise id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: PinkyPromise confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinkyPromise'
+        '403':
+          description: Caller is not `user_b_id` of this PinkyPromise (`NOT_CONFIRMER`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such PinkyPromise (`PINKY_PROMISE_NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            Not awaiting confirmation (`NOT_PENDING_CONFIRM`), the event was
+            already promised via another conversation
+            (`ALREADY_PINKY_PROMISED`), or a party is at the 3-concurrent
+            cap (`PINKY_PROMISE_CAP_REACHED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1132,6 +1248,50 @@ components:
         content:
           type: string
           description: Echoes the stored `content_or_url`.
+        created_at:
+          type: string
+          format: date-time
+
+    PinkyPromiseStatus:
+      type: string
+      enum: [pending_b_confirm, confirmed, cancelled, completed]
+
+    PinkyPromise:
+      type: object
+      required:
+        - id
+        - proposal_id
+        - conversation_id
+        - user_a_id
+        - user_b_id
+        - status
+        - confirmed_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        user_a_id:
+          type: string
+          format: uuid
+          description: The proposer / initiator ("A").
+        user_b_id:
+          type: string
+          format: uuid
+          description: The interested user, who confirms ("B").
+        status:
+          $ref: '#/components/schemas/PinkyPromiseStatus'
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when `status` becomes `confirmed`; `null` before that.
         created_at:
           type: string
           format: date-time

@@ -18,6 +18,8 @@ struct ExpiryInputMessage
 // authoritative reading of CUJ #4 / the entities doc's Section 5:
 //
 //   status == "pinky_promised"  -> no expiry (std::nullopt)
+//   status == "expired"         -> conversationCreatedAt (already over;
+//                                  set by PinkyPromise sibling closure)
 //   A never replied             -> conversationCreatedAt + 3 days
 //   otherwise:
 //     base  = (A's first message time) + 12h
