@@ -381,6 +381,84 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /proposals/{id}/swipe:
+    post:
+      tags: [Proposal]
+      summary: Swipe (Heart / X) on a Proposal (CUJ #3)
+      description: >
+        Records the caller's swipe on Proposal `{id}` — `interested` is
+        the Heart, `pass` is the X. One swipe per caller per Proposal,
+        ever: a second swipe (even flipping `interested` <-> `pass`) is
+        rejected with 409 `ALREADY_SWIPED`, never upserted.
+
+
+        `pass` is always allowed (no verification, no cap). `interested`
+        requires the caller's `Profile.verified = true` (else 403
+        `PROFILE_NOT_VERIFIED`) and counts against the "10 interested per
+        day" rule (CUJ #3 / Global rules), interpreted as a rolling 24h
+        window — the 11th `interested` swipe inside any 24h span is
+        rejected with 403 `INTERESTED_DAILY_CAP_REACHED` (a distinct code
+        from the verification gate). `pass` swipes never count toward that
+        cap.
+
+
+        `{id}` must name an `active` Proposal owned by someone other than
+        the caller: an unknown/malformed id or a
+        cancelled/expired/pinky_promised Proposal returns 404, and swiping
+        on your own Proposal returns 400 `CANNOT_SWIPE_OWN_PROPOSAL`.
+      operationId: swipeOnProposal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwipeRequest'
+      responses:
+        '201':
+          description: Swipe recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Swipe'
+        '400':
+          description: >
+            `action` missing/invalid, or the caller tried to swipe on
+            their own Proposal (`CANNOT_SWIPE_OWN_PROPOSAL`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: >
+            `interested` swipe blocked — caller isn't verified
+            (`PROFILE_NOT_VERIFIED`) or has hit the rolling-24h interested
+            cap (`INTERESTED_DAILY_CAP_REACHED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such active Proposal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The caller has already swiped on this Proposal (`ALREADY_SWIPED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -793,3 +871,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProposalFeedItem'
+
+    SwipeAction:
+      type: string
+      enum: [interested, pass]
+      description: >
+        `interested` = Heart (verification-gated, counts toward the
+        rolling-24h cap); `pass` = X (always allowed, uncapped).
+
+    SwipeRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/SwipeAction'
+
+    Swipe:
+      type: object
+      required: [id, proposal_id, action, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/SwipeAction'
+        created_at:
+          type: string
+          format: date-time

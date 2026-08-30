@@ -7,6 +7,7 @@
 #include "services/PhotoUploadService.h"
 #include "services/ProfileService.h"
 #include "services/ProposalService.h"
+#include "services/SwipeService.h"
 #include "services/VerificationService.h"
 #include "storage/GcsUploadUrlProvider.h"
 #include "verification/FaceVerificationProvider.h"
@@ -25,5 +26,6 @@ services::ProfileService &profileService();
 services::VerificationService &verificationService();
 services::ProposalService &proposalService();
 services::PhotoUploadService &photoUploadService();
+services::SwipeService &swipeService();
 
 }  // namespace app_context
