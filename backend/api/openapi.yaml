@@ -693,10 +693,11 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: >
-            Not awaiting confirmation (`NOT_PENDING_CONFIRM`), the event was
-            already promised via another conversation
-            (`ALREADY_PINKY_PROMISED`), or a party is at the 3-concurrent
-            cap (`PINKY_PROMISE_CAP_REACHED`).
+            Not awaiting confirmation (`NOT_PENDING_CONFIRM`), the winning
+            conversation has since decayed past its computed expiry
+            (`CONVERSATION_EXPIRED`), the event was already promised via
+            another conversation (`ALREADY_PINKY_PROMISED`), or a party is
+            at the 3-concurrent cap (`PINKY_PROMISE_CAP_REACHED`).
           content:
             application/json:
               schema:

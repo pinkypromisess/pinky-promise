@@ -526,6 +526,41 @@ DROGON_TEST(InitiateOnExpiredConversationIs409)
     }
 }
 
+// CHECKS: the decay clock keeps running during pending_b_confirm -- if the
+// winning conversation decays past its computed expiry before B taps,
+// confirm is rejected 409 CONVERSATION_EXPIRED with no partial write.
+DROGON_TEST(ConfirmRejectedWhenConversationTimeExpired)
+{
+    try
+    {
+        auto f = setUpConversation();
+        auto init = initiatePp(f.a, f.conversationId);
+        REQUIRE(init.status == k201Created);
+        const auto ppId = init.json["id"].asString();
+
+        // No messages -> computed expiry = created_at + 3d. Backdate 4 days
+        // so it is now in the past. initiate() did NOT stop this clock.
+        testDbClient()->execSqlSync(
+            "UPDATE conversations SET created_at = now() - interval '4 days' WHERE id = $1",
+            f.conversationId);
+
+        auto conf = confirmPp(f.b, ppId);
+        REQUIRE(conf.status == k409Conflict);
+        CHECK(conf.json["error"].asString() == "CONVERSATION_EXPIRED");
+
+        // Nothing moved.
+        CHECK(dbScalar("SELECT status FROM pinky_promises WHERE id = $1", ppId) ==
+              "pending_b_confirm");
+        CHECK(dbScalar("SELECT status FROM proposals WHERE id = $1", f.proposalId) == "active");
+        CHECK(dbScalar("SELECT status FROM conversations WHERE id = $1", f.conversationId) ==
+              "active");
+    }
+    catch (const std::exception &e)
+    {
+        FAIL(std::string("HTTP test failed: ") + e.what());
+    }
+}
+
 // CHECKS: both PinkyPromise routes sit behind auth::AuthFilter.
 DROGON_TEST(PinkyPromiseRoutesRequireAuth)
 {

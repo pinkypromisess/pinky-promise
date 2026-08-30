@@ -183,20 +183,43 @@ PinkyPromise PinkyPromiseService::confirm(const std::string &pinkyPromiseId,
     }
 
     auto ppRows = db_->execSqlSync(
-        "SELECT user_b_id, status FROM pinky_promises WHERE id = $1", pinkyPromiseId);
+        "SELECT pp.user_b_id, pp.status, pp.conversation_id, "
+        "c.status AS conv_status, c.proposer_user_id AS conv_proposer, "
+        "FLOOR(EXTRACT(EPOCH FROM c.created_at))::bigint AS conv_created_epoch "
+        "FROM pinky_promises pp JOIN conversations c ON c.id = pp.conversation_id "
+        "WHERE pp.id = $1",
+        pinkyPromiseId);
     if (ppRows.empty())
     {
         throw NotFoundException("No pinky promise " + pinkyPromiseId + ".");
     }
-    if (ppRows[0]["user_b_id"].as<std::string>() != callerUserId)
+    const auto &pp = ppRows[0];
+    if (pp["user_b_id"].as<std::string>() != callerUserId)
     {
         throw PinkyPromiseForbiddenException(
             "NOT_CONFIRMER", "Only the invited user can confirm this Pinky Promise.");
     }
-    if (ppRows[0]["status"].as<std::string>() != "pending_b_confirm")
+    if (pp["status"].as<std::string>() != "pending_b_confirm")
     {
         throw PinkyPromiseConflictException(
             "NOT_PENDING_CONFIRM", "This Pinky Promise is not awaiting confirmation.");
+    }
+
+    // The decay clock keeps running throughout pending_b_confirm (CUJ #4:
+    // "if B never confirms, the normal decay clock keeps running"), so a
+    // conversation that has since decayed past its computed expiry -- or
+    // was explicitly closed (stored status 'expired') -- can no longer be
+    // confirmed. Mirrors the same check in initiate(). conversationIsTime-
+    // Expired() returns false for a 'pinky_promised' conversation, so this
+    // never fires on the winning-side re-read.
+    if (conversationIsTimeExpired(pp["conversation_id"].as<std::string>(),
+                                   epochToTp(pp["conv_created_epoch"].as<int64_t>()),
+                                   pp["conv_status"].as<std::string>(),
+                                   pp["conv_proposer"].as<std::string>()))
+    {
+        throw PinkyPromiseConflictException(
+            "CONVERSATION_EXPIRED",
+            "This conversation has expired; the Pinky Promise can no longer be confirmed.");
     }
 
     // One atomic statement:

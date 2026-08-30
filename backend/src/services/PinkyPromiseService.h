@@ -51,6 +51,7 @@ class PinkyPromiseService
     //  - NotFoundException (404)                    PP missing / malformed id
     //  - PinkyPromiseForbiddenException (403)       NOT_CONFIRMER
     //  - PinkyPromiseConflictException (409)        NOT_PENDING_CONFIRM /
+    //                                               CONVERSATION_EXPIRED /
     //                                               ALREADY_PINKY_PROMISED /
     //                                               PINKY_PROMISE_CAP_REACHED
     PinkyPromise confirm(const std::string &pinkyPromiseId, const std::string &callerUserId);
