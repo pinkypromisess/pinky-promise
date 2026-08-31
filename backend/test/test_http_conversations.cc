@@ -194,15 +194,6 @@ void dbSeedAlternatingMessages(const std::string &cid, const std::string &aId,
         count);
 }
 
-// Round-trips an ISO-8601 string back to an epoch via Postgres so the test
-// doesn't hand-roll a date parser.
-long long parseIsoToEpoch(const std::string &iso)
-{
-    auto rows = testDbClient()->execSqlSync(
-        "SELECT EXTRACT(EPOCH FROM $1::timestamptz)::bigint AS e", iso);
-    return rows[0]["e"].as<int64_t>();
-}
-
 }  // namespace
 
 // REQUIRED (a): an `interested` swipe opens a conversation, visible to
@@ -267,7 +258,8 @@ DROGON_TEST(PassSwipeOpensNoConversation)
     }
 }
 
-// REQUIRED (b): A's first reply sets expires_at exactly to that message + 12h.
+// REQUIRED (b): A's first reply sets expires_at to that message + 12h
+// (within a 2s wall-clock tolerance -- `aFirst` is now()-relative).
 DROGON_TEST(ExpiresAtIsTwelveHoursAfterAFirstReplySeeded)
 {
     try
@@ -281,7 +273,8 @@ DROGON_TEST(ExpiresAtIsTwelveHoursAfterAFirstReplySeeded)
         auto resp = sendTestRequest(
             f.b.baseUrl, Get, "/v1/conversations/" + f.conversationId, f.b.token);
         REQUIRE(resp.status == k200OK);
-        CHECK(resp.json["expires_at"].asString() == isoFromEpoch(aFirst + 12 * H));
+        CHECK(timestampSkewSeconds(isoFromEpoch(aFirst + 12 * H),
+                                    resp.json["expires_at"].asString()) <= 2);
     }
     catch (const std::exception &e)
     {
@@ -305,9 +298,12 @@ DROGON_TEST(PostingAFirstReplySetsTwelveHourBaseOverHttp)
         auto resp = sendTestRequest(
             f.a.baseUrl, Get, "/v1/conversations/" + f.conversationId, f.a.token);
         REQUIRE(resp.status == k200OK);
-        const long long expEpoch = parseIsoToEpoch(resp.json["expires_at"].asString());
-        CHECK(expEpoch >= before + 12 * H - 1);
-        CHECK(expEpoch <= after + 12 * H + 1);
+        const long long expEpoch = parseIso8601UtcToEpoch(resp.json["expires_at"].asString());
+        // The message's created_at is a server now() between `before` and
+        // `after`; +/-2s absorbs CI scheduler jitter and the FLOOR() on the
+        // epoch read.
+        CHECK(expEpoch >= before + 12 * H - 2);
+        CHECK(expEpoch <= after + 12 * H + 2);
     }
     catch (const std::exception &e)
     {
@@ -331,7 +327,8 @@ DROGON_TEST(ExpiresAtSameSenderRepeatAddsOneMinuteEachSeeded)
         auto resp = sendTestRequest(
             f.b.baseUrl, Get, "/v1/conversations/" + f.conversationId, f.b.token);
         REQUIRE(resp.status == k200OK);
-        CHECK(resp.json["expires_at"].asString() == isoFromEpoch(t + 12 * H + 120));
+        CHECK(timestampSkewSeconds(isoFromEpoch(t + 12 * H + 120),
+                                    resp.json["expires_at"].asString()) <= 2);
     }
     catch (const std::exception &e)
     {
@@ -355,7 +352,8 @@ DROGON_TEST(ExpiresAtOtherSideReplyAddsTwoHoursEachSeeded)
         auto resp = sendTestRequest(
             f.b.baseUrl, Get, "/v1/conversations/" + f.conversationId, f.b.token);
         REQUIRE(resp.status == k200OK);
-        CHECK(resp.json["expires_at"].asString() == isoFromEpoch(t + 12 * H + 4 * H));
+        CHECK(timestampSkewSeconds(isoFromEpoch(t + 12 * H + 4 * H),
+                                    resp.json["expires_at"].asString()) <= 2);
     }
     catch (const std::exception &e)
     {
@@ -378,7 +376,8 @@ DROGON_TEST(ExpiresAtThreeDayCapWhenANeverRepliedSeeded)
         auto resp = sendTestRequest(
             f.b.baseUrl, Get, "/v1/conversations/" + f.conversationId, f.b.token);
         REQUIRE(resp.status == k200OK);
-        CHECK(resp.json["expires_at"].asString() == isoFromEpoch(created + 3 * D));
+        CHECK(timestampSkewSeconds(isoFromEpoch(created + 3 * D),
+                                    resp.json["expires_at"].asString()) <= 2);
     }
     catch (const std::exception &e)
     {
@@ -403,7 +402,8 @@ DROGON_TEST(ExpiresAtThreeDayCapDespiteHeavyActivitySeeded)
         auto resp = sendTestRequest(
             f.b.baseUrl, Get, "/v1/conversations/" + f.conversationId, f.b.token);
         REQUIRE(resp.status == k200OK);
-        CHECK(resp.json["expires_at"].asString() == isoFromEpoch(created + 3 * D));
+        CHECK(timestampSkewSeconds(isoFromEpoch(created + 3 * D),
+                                    resp.json["expires_at"].asString()) <= 2);
     }
     catch (const std::exception &e)
     {
