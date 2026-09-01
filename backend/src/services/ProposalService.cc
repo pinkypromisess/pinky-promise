@@ -239,16 +239,18 @@ std::vector<ProposalFeedItem> ProposalService::getFeed(const std::string &userId
                                                          std::optional<double> lat,
                                                          std::optional<double> lng)
 {
+    // Module C unblock (C.4): the LEFT JOIN + `s.id IS NULL` anti-join
+    // omits any proposal this caller has already swiped on, either action
+    // (swipes has UNIQUE (proposal_id, swiper_user_id), so no row fan-out).
+    // Columns are qualified with `p.` because `id` / `created_at` are
+    // ambiguous once `swipes` is joined.
     const std::string activeNotOwnClause =
-        "SELECT id, creator_user_id, activity_text, event_time, location_lat, location_lng, "
-        "location_address, payment_type, looking_for_text, reveal_occupation, "
-        "reveal_relationship_status, status, created_at FROM proposals "
-        "WHERE status = 'active' AND creator_user_id != $1 "
-        // TODO(Module C): exclude proposals already swiped by the caller
-        // (LEFT JOIN swipes ON swipes.proposal_id = proposals.id AND
-        // swipes.swiper_user_id = $1 WHERE swipes.id IS NULL) once the
-        // swipes table exists -- it doesn't in this repo yet, so the feed
-        // currently can return proposals the caller already Hearted/passed.
+        "SELECT p.id, p.creator_user_id, p.activity_text, p.event_time, p.location_lat, "
+        "p.location_lng, p.location_address, p.payment_type, p.looking_for_text, "
+        "p.reveal_occupation, p.reveal_relationship_status, p.status, p.created_at "
+        "FROM proposals p "
+        "LEFT JOIN swipes s ON s.proposal_id = p.id AND s.swiper_user_id = $1 "
+        "WHERE p.status = 'active' AND p.creator_user_id != $1 AND s.id IS NULL "
         // TODO(Module E): exclude proposals from creators the caller has
         // blocked or is blocked by, once the blocks table exists.
         ;
@@ -257,14 +259,15 @@ std::vector<ProposalFeedItem> ProposalService::getFeed(const std::string &userId
         (lat.has_value() && lng.has_value())
             ? db_->execSqlSync(
                   activeNotOwnClause +
-                      "ORDER BY ((location_lat - $2) * (location_lat - $2) + "
-                      "(location_lng - $3) * (location_lng - $3)) ASC, created_at DESC LIMIT " +
+                      "ORDER BY ((p.location_lat - $2) * (p.location_lat - $2) + "
+                      "(p.location_lng - $3) * (p.location_lng - $3)) ASC, "
+                      "p.created_at DESC LIMIT " +
                       std::to_string(kFeedLimit),
                   userId,
                   *lat,
                   *lng)
             : db_->execSqlSync(
-                  activeNotOwnClause + "ORDER BY created_at DESC LIMIT " +
+                  activeNotOwnClause + "ORDER BY p.created_at DESC LIMIT " +
                       std::to_string(kFeedLimit),
                   userId);
 
@@ -310,9 +313,32 @@ std::vector<ProposalFeedItem> ProposalService::getFeed(const std::string &userId
 
 void ProposalService::deleteProposal(const std::string &userId, const std::string &proposalId)
 {
+    // Module C unblock (C.4): cancel + cascade as ONE atomic statement.
+    // `cancelled_proposal` carries the existing ownership guard
+    // (id + creator) and its "no row -> NotFoundException" behaviour is
+    // unchanged; the two follow-on UPDATEs key off its RETURNING id, so
+    // nothing cascades unless the proposal was actually the caller's and
+    // got cancelled. Data-modifying CTEs all run to completion in the one
+    // statement, or the whole statement rolls back -- no partial cascade.
+    //   - active Conversations on the proposal  -> expired
+    //   - confirmed PinkyPromise on the proposal -> cancelled
+    // A `pending_b_confirm` PinkyPromise is deliberately left alone (no
+    // confirmed commitment to undo; its Conversation goes 'expired' above,
+    // which already blocks it). The scheduled reminder job (Module D) and
+    // any notify-the-other-party decision are out of scope here.
     auto result = db_->execSqlSync(
-        "UPDATE proposals SET status = 'cancelled' WHERE id = $1 AND creator_user_id = $2 "
-        "RETURNING id",
+        "WITH cancelled_proposal AS ("
+        "  UPDATE proposals SET status = 'cancelled' "
+        "  WHERE id = $1 AND creator_user_id = $2 "
+        "  RETURNING id"
+        "), close_conversations AS ("
+        "  UPDATE conversations SET status = 'expired' "
+        "  WHERE proposal_id = (SELECT id FROM cancelled_proposal) AND status = 'active'"
+        "), cancel_pinky_promises AS ("
+        "  UPDATE pinky_promises SET status = 'cancelled' "
+        "  WHERE proposal_id = (SELECT id FROM cancelled_proposal) AND status = 'confirmed'"
+        ") "
+        "SELECT id FROM cancelled_proposal",
         proposalId,
         userId);
 
@@ -320,12 +346,6 @@ void ProposalService::deleteProposal(const std::string &userId, const std::strin
     {
         throw NotFoundException("No proposal " + proposalId + " owned by this caller.");
     }
-
-    // TODO(Module C): cascade this cancellation -- close any open
-    // Conversations on this Proposal, cancel a confirmed PinkyPromise, and
-    // cancel the scheduled reminder job (CUJ #8). Those tables/jobs belong
-    // to Module C and don't exist in this repo yet, so for now this only
-    // flips Proposal.status.
 }
 
 }  // namespace services
