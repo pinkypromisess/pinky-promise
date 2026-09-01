@@ -18,6 +18,12 @@ add_executable(pinky_promise_tests
     test_gcs_v4_signing.cc
     test_gcs_sign_blob_provider_lifecycle.cc
     test_photo_upload_url.cc
+    test_swipe_validation.cc
+    test_http_swipe.cc
+    test_conversation_expiry.cc
+    test_http_conversations.cc
+    test_http_pinky_promise.cc
+    test_http_proposal_cascade.cc
     ${CORE_SOURCES}
 )
 target_include_directories(pinky_promise_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)

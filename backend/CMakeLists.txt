@@ -23,6 +23,8 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/validation/ProfileValidation.cc
     ${CMAKE_SOURCE_DIR}/src/validation/ProposalValidation.cc
     ${CMAKE_SOURCE_DIR}/src/validation/PhotoUploadValidation.cc
+    ${CMAKE_SOURCE_DIR}/src/validation/SwipeValidation.cc
+    ${CMAKE_SOURCE_DIR}/src/validation/MessageValidation.cc
     ${CMAKE_SOURCE_DIR}/src/verification/StubFaceVerificationProvider.cc
     ${CMAKE_SOURCE_DIR}/src/storage/TimeUtils.cc
     ${CMAKE_SOURCE_DIR}/src/storage/GcsV4Signing.cc
@@ -32,9 +34,16 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/services/VerificationService.cc
     ${CMAKE_SOURCE_DIR}/src/services/ProposalService.cc
     ${CMAKE_SOURCE_DIR}/src/services/PhotoUploadService.cc
+    ${CMAKE_SOURCE_DIR}/src/services/SwipeService.cc
+    ${CMAKE_SOURCE_DIR}/src/services/ConversationExpiry.cc
+    ${CMAKE_SOURCE_DIR}/src/services/ConversationService.cc
+    ${CMAKE_SOURCE_DIR}/src/services/PinkyPromiseService.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProfileController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/VerificationController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProposalController.cc
+    ${CMAKE_SOURCE_DIR}/src/controllers/SwipeController.cc
+    ${CMAKE_SOURCE_DIR}/src/controllers/ConversationController.cc
+    ${CMAKE_SOURCE_DIR}/src/controllers/PinkyPromiseController.cc
 )
 
 add_executable(pinky_promise_backend src/main.cc ${CORE_SOURCES})

@@ -30,6 +30,8 @@ tags:
   - name: Profile
   - name: Verification
   - name: Proposal
+  - name: Conversation
+  - name: PinkyPromise
 
 paths:
   /profile:
@@ -374,6 +376,328 @@ paths:
           description: Proposal cancelled.
         '404':
           description: No such Proposal, or the caller isn't its creator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /proposals/{id}/swipe:
+    post:
+      tags: [Proposal]
+      summary: Swipe (Heart / X) on a Proposal (CUJ #3)
+      description: >
+        Records the caller's swipe on Proposal `{id}` — `interested` is
+        the Heart, `pass` is the X. One swipe per caller per Proposal,
+        ever: a second swipe (even flipping `interested` <-> `pass`) is
+        rejected with 409 `ALREADY_SWIPED`, never upserted.
+
+
+        `pass` is always allowed (no verification, no cap). `interested`
+        requires the caller's `Profile.verified = true` (else 403
+        `PROFILE_NOT_VERIFIED`) and counts against the "10 interested per
+        day" rule (CUJ #3 / Global rules), interpreted as a rolling 24h
+        window — the 11th `interested` swipe inside any 24h span is
+        rejected with 403 `INTERESTED_DAILY_CAP_REACHED` (a distinct code
+        from the verification gate). `pass` swipes never count toward that
+        cap.
+
+
+        `{id}` must name an `active` Proposal owned by someone other than
+        the caller: an unknown/malformed id or a
+        cancelled/expired/pinky_promised Proposal returns 404, and swiping
+        on your own Proposal returns 400 `CANNOT_SWIPE_OWN_PROPOSAL`.
+      operationId: swipeOnProposal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwipeRequest'
+      responses:
+        '201':
+          description: Swipe recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Swipe'
+        '400':
+          description: >
+            `action` missing/invalid, or the caller tried to swipe on
+            their own Proposal (`CANNOT_SWIPE_OWN_PROPOSAL`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: >
+            `interested` swipe blocked — caller isn't verified
+            (`PROFILE_NOT_VERIFIED`) or has hit the rolling-24h interested
+            cap (`INTERESTED_DAILY_CAP_REACHED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such active Proposal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The caller has already swiped on this Proposal (`ALREADY_SWIPED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations:
+    get:
+      tags: [Conversation]
+      summary: List the caller's conversations (CUJ #4)
+      description: >
+        Every Conversation where the caller is the proposer (`A`) or the
+        interested user (`B`), most-recent `last_activity_at` first. A
+        Conversation is opened automatically when a user swipes
+        `interested` on a Proposal (see `POST /proposals/{id}/swipe`);
+        there is no endpoint to create one directly.
+
+
+        Each item carries a server-**computed** `expires_at` (never a
+        stored ticking value): 3 days from creation if `A` has not replied;
+        otherwise 12h from `A`'s first reply, +1 minute per consecutive
+        same-sender message and +2 hours each time the other side breaks
+        silence, hard-capped at 3 days from creation. It is `null` once the
+        Conversation is `pinky_promised`.
+      operationId: listConversations
+      responses:
+        '200':
+          description: The caller's conversations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations/{id}:
+    get:
+      tags: [Conversation]
+      summary: Get a single conversation
+      description: >
+        Returns the Conversation with its computed `expires_at` (see
+        `GET /conversations`). 404 if no such Conversation (or a malformed
+        id); 403 `NOT_A_PARTICIPANT` if the caller is neither `A` nor `B`.
+      operationId: getConversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '403':
+          description: The caller is not a participant (`NOT_A_PARTICIPANT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations/{id}/messages:
+    post:
+      tags: [Conversation]
+      summary: Post a message to a conversation
+      description: >
+        Appends a text or voice message. The caller must be `A` or `B`
+        (else 403 `NOT_A_PARTICIPANT`); 404 if the Conversation doesn't
+        exist. Rejected with 409 `CONVERSATION_EXPIRED` when the
+        Conversation's **computed** status is expired (now past its
+        computed `expires_at`) -- a `pinky_promised` Conversation is never
+        expired and always accepts messages. On success the message is
+        stored and the Conversation's `last_activity_at` / `last_sender_id`
+        are advanced to this message.
+      operationId: postConversationMessage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageRequest'
+      responses:
+        '201':
+          description: Message stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          description: '`type` missing/invalid, or `content` missing/blank.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not a participant (`NOT_A_PARTICIPANT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The conversation has expired (`CONVERSATION_EXPIRED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations/{id}/pinky-promise:
+    post:
+      tags: [PinkyPromise]
+      summary: Initiate a Pinky Promise on a conversation (A taps the button)
+      description: >
+        Only the conversation's proposer ("A") may call this. Creates a
+        PinkyPromise in `pending_b_confirm` for `(proposal, A, B)` where B
+        is the conversation's interested user. This does **not** stop the
+        conversation's expiry clock -- per CUJ #4 the un-timed state kicks
+        in only at `confirmed`, not at `pending_b_confirm`.
+
+
+        The 3-concurrent cap is a confirm-time check, not enforced here.
+      operationId: initiatePinkyPromise
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: PinkyPromise created in `pending_b_confirm`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinkyPromise'
+        '403':
+          description: >
+            Caller is the interested user, not the proposer
+            (`NOT_INITIATOR`), or not a participant at all
+            (`NOT_A_PARTICIPANT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such conversation (`CONVERSATION_NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            The conversation is already pinky-promised
+            (`ALREADY_PINKY_PROMISED`), has expired (`CONVERSATION_EXPIRED`),
+            or already has a live PinkyPromise (`PINKY_PROMISE_EXISTS`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /pinky-promises/{id}/confirm:
+    post:
+      tags: [PinkyPromise]
+      summary: Confirm a Pinky Promise (B taps back)
+      description: >
+        Only `user_b_id` of the PinkyPromise may confirm, and only while it
+        is `pending_b_confirm`. Enforces the "at most 3 active
+        Pinky-Promised events" rule against **both** parties: if either A or
+        B already has 3 `confirmed` PinkyPromises whose proposal
+        `event_time` is in the future, the request is rejected with
+        `PINKY_PROMISE_CAP_REACHED`.
+
+
+        On success, in one atomic step: this PinkyPromise ->
+        `confirmed` (+ `confirmed_at`); its Proposal -> `pinky_promised`;
+        its winning Conversation -> `pinky_promised` (which stops its
+        expiry); every other still-`active` Conversation on the same
+        Proposal -> `expired` (CUJ #4 sibling closure).
+      operationId: confirmPinkyPromise
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: PinkyPromise id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: PinkyPromise confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinkyPromise'
+        '403':
+          description: Caller is not `user_b_id` of this PinkyPromise (`NOT_CONFIRMER`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such PinkyPromise (`PINKY_PROMISE_NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            Not awaiting confirmation (`NOT_PENDING_CONFIRM`), the winning
+            conversation has since decayed past its computed expiry
+            (`CONVERSATION_EXPIRED`), the event was already promised via
+            another conversation (`ALREADY_PINKY_PROMISED`), or a party is
+            at the 3-concurrent cap (`PINKY_PROMISE_CAP_REACHED`).
           content:
             application/json:
               schema:
@@ -793,3 +1117,182 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProposalFeedItem'
+
+    SwipeAction:
+      type: string
+      enum: [interested, pass]
+      description: >
+        `interested` = Heart (verification-gated, counts toward the
+        rolling-24h cap); `pass` = X (always allowed, uncapped).
+
+    SwipeRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/SwipeAction'
+
+    Swipe:
+      type: object
+      required: [id, proposal_id, action, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/SwipeAction'
+        created_at:
+          type: string
+          format: date-time
+
+    ConversationStatus:
+      type: string
+      enum: [active, pinky_promised, expired]
+      description: >
+        Stored status. `expired` exists for a future cleanup job only --
+        the API's expiry decision is always the COMPUTED `expires_at`, not
+        this field.
+
+    MessageType:
+      type: string
+      enum: [text, voice]
+
+    Conversation:
+      type: object
+      required:
+        - id
+        - proposal_id
+        - proposer_user_id
+        - interested_user_id
+        - last_activity_at
+        - last_sender_id
+        - status
+        - created_at
+        - expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        proposer_user_id:
+          type: string
+          format: uuid
+          description: '"A" -- the proposal''s creator.'
+        interested_user_id:
+          type: string
+          format: uuid
+          description: '"B" -- the user who swiped `interested`.'
+        last_activity_at:
+          type: string
+          format: date-time
+        last_sender_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Sender of the most recent message; `null` until the first message.
+        status:
+          $ref: '#/components/schemas/ConversationStatus'
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Server-computed on read (see `GET /conversations`). `null` when
+            `status` is `pinky_promised`.
+
+    ConversationListResponse:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+
+    MessageRequest:
+      type: object
+      required: [type, content]
+      properties:
+        type:
+          $ref: '#/components/schemas/MessageType'
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: >
+            The message text (for a text message) or the audio object URL
+            (for a voice message).
+
+    Message:
+      type: object
+      required: [id, conversation_id, sender_user_id, type, content, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        sender_user_id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/MessageType'
+        content:
+          type: string
+          description: Echoes the stored `content_or_url`.
+        created_at:
+          type: string
+          format: date-time
+
+    PinkyPromiseStatus:
+      type: string
+      enum: [pending_b_confirm, confirmed, cancelled, completed]
+
+    PinkyPromise:
+      type: object
+      required:
+        - id
+        - proposal_id
+        - conversation_id
+        - user_a_id
+        - user_b_id
+        - status
+        - confirmed_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        user_a_id:
+          type: string
+          format: uuid
+          description: The proposer / initiator ("A").
+        user_b_id:
+          type: string
+          format: uuid
+          description: The interested user, who confirms ("B").
+        status:
+          $ref: '#/components/schemas/PinkyPromiseStatus'
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when `status` becomes `confirmed`; `null` before that.
+        created_at:
+          type: string
+          format: date-time
