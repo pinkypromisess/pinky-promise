@@ -320,7 +320,12 @@ void ProposalService::deleteProposal(const std::string &userId, const std::strin
     // nothing cascades unless the proposal was actually the caller's and
     // got cancelled. Data-modifying CTEs all run to completion in the one
     // statement, or the whole statement rolls back -- no partial cascade.
-    //   - active Conversations on the proposal  -> expired
+    //   - open Conversations on the proposal (active OR the pinky_promised
+    //     winner) -> expired. CUJ #8's "any open Conversations close" wins
+    //     over the entities-doc's narrower "status = active" phrasing: a
+    //     pinky_promised conversation still accepts messages, so leaving it
+    //     attached to a cancelled proposal + cancelled PP would be a live
+    //     orphan.
     //   - confirmed PinkyPromise on the proposal -> cancelled
     // A `pending_b_confirm` PinkyPromise is deliberately left alone (no
     // confirmed commitment to undo; its Conversation goes 'expired' above,
@@ -333,7 +338,8 @@ void ProposalService::deleteProposal(const std::string &userId, const std::strin
         "  RETURNING id"
         "), close_conversations AS ("
         "  UPDATE conversations SET status = 'expired' "
-        "  WHERE proposal_id = (SELECT id FROM cancelled_proposal) AND status = 'active'"
+        "  WHERE proposal_id = (SELECT id FROM cancelled_proposal) "
+        "    AND status IN ('active', 'pinky_promised')"
         "), cancel_pinky_promises AS ("
         "  UPDATE pinky_promises SET status = 'cancelled' "
         "  WHERE proposal_id = (SELECT id FROM cancelled_proposal) AND status = 'confirmed'"

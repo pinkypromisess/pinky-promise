@@ -314,7 +314,10 @@ DROGON_TEST(DeleteCascadesActiveConversationToExpired)
 }
 
 // REQUIRED 6: deleting a proposal with a confirmed PinkyPromise flips that
-// PP to `cancelled`. Uses the real initiate/confirm flow.
+// PP to `cancelled`, and its winning conversation -- `pinky_promised`, so
+// still open -- is closed to `expired` too (CUJ #8's "any open
+// Conversations close"; no live orphan). Uses the real initiate/confirm
+// flow, so the winning conversation really is `pinky_promised` going in.
 DROGON_TEST(DeleteCascadesConfirmedPinkyPromiseToCancelled)
 {
     try
@@ -328,12 +331,19 @@ DROGON_TEST(DeleteCascadesConfirmedPinkyPromiseToCancelled)
         const auto ppId = init.json["id"].asString();
         REQUIRE(confirmPp(b, ppId).status == k200OK);
         REQUIRE(dbScalar("SELECT status FROM pinky_promises WHERE id = $1", ppId) == "confirmed");
+        REQUIRE(dbScalar("SELECT status FROM conversations WHERE id = $1", pc.conversationId) ==
+                "pinky_promised");
 
         REQUIRE(deleteProposal(a, pc.proposalId).status == k204NoContent);
 
         CHECK(dbScalar("SELECT status FROM pinky_promises WHERE id = $1", ppId) == "cancelled");
         CHECK(dbScalar("SELECT status FROM proposals WHERE id = $1", pc.proposalId) ==
               "cancelled");
+        CHECK(dbScalar("SELECT status FROM conversations WHERE id = $1", pc.conversationId) ==
+              "expired");
+        auto post = postMessage(a, pc.conversationId, "still on?");
+        CHECK(post.status == k409Conflict);
+        CHECK(post.json["error"].asString() == "CONVERSATION_EXPIRED");
     }
     catch (const std::exception &e)
     {
