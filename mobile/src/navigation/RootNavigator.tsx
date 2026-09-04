@@ -2,6 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import BootstrapScreen from '../screens/BootstrapScreen';
+import DiscoveryFeedScreen from '../screens/DiscoveryFeedScreen';
 import PhotoManagementScreen from '../screens/PhotoManagementScreen';
 import ProfileFormScreen from '../screens/ProfileFormScreen';
 import ProfileHomeScreen from '../screens/ProfileHomeScreen';
@@ -23,6 +24,7 @@ export default function RootNavigator() {
           options={{ title: 'Manage Photos' }}
         />
         <Stack.Screen name="Verification" component={VerificationScreen} options={{ title: 'Verify' }} />
+        <Stack.Screen name="Discovery" component={DiscoveryFeedScreen} options={{ title: 'Discover' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -55,6 +55,8 @@ export default function ProfileHomeScreen({ navigation }: Props) {
         <Button title="Manage Photos" onPress={() => navigation.navigate('PhotoManagement')} />
         <View style={styles.spacer} />
         <Button title={profile.verified ? 'Re-verify' : 'Verify Now'} onPress={() => navigation.navigate('Verification')} />
+        <View style={styles.spacer} />
+        <Button title="Discover" onPress={() => navigation.navigate('Discovery')} />
       </View>
     </View>
   );
