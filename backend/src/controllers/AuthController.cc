@@ -2,8 +2,11 @@
 
 #include "../AppContext.h"
 #include "../auth/JwtAuth.h"
+#include "../services/AuthService.h"
 #include "../services/AuthServiceErrors.h"
 #include "ControllerUtils.h"
+
+#include <functional>
 
 using namespace drogon;
 
@@ -22,6 +25,36 @@ Json::Value authResponseBody(const std::string &userId)
     j["token"] = auth::signJwt(userId, auth::signingSecret(), kTokenTtlSeconds);
     j["user_id"] = userId;
     return j;
+}
+
+// Shared by socialGoogle()/socialApple(): parses the body, calls
+// `signupOrLogin`, and renders the 201/200 + token/user_id response or
+// the 401 INVALID_SOCIAL_TOKEN failure. `signupOrLogin` is one of
+// AuthService's two signupOrLoginWith*() methods, bound to the right
+// provider by the caller.
+void handleSocialLogin(
+    const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &callback,
+    const std::function<services::SocialLoginResult(const std::string &)> &signupOrLogin)
+{
+    auto jsonBody = req->getJsonObject();
+    if (!jsonBody)
+    {
+        callback(errorResponse(k400BadRequest, "INVALID_BODY", "Request body must be JSON."));
+        return;
+    }
+
+    const auto idToken = jsonBody->get("id_token", "").asString();
+
+    try
+    {
+        const auto result = signupOrLogin(idToken);
+        const auto status = result.wasCreated ? k201Created : k200OK;
+        callback(jsonResponse(authResponseBody(result.userId), status));
+    }
+    catch (const services::AuthUnauthorizedException &e)
+    {
+        callback(errorResponse(k401Unauthorized, e.code, e.what()));
+    }
 }
 
 }  // namespace
@@ -76,6 +109,22 @@ void AuthController::login(const HttpRequestPtr &req,
     {
         callback(errorResponse(k401Unauthorized, e.code, e.what()));
     }
+}
+
+void AuthController::socialGoogle(const HttpRequestPtr &req,
+                                   std::function<void(const HttpResponsePtr &)> &&callback)
+{
+    handleSocialLogin(req, callback, [](const std::string &idToken) {
+        return app_context::authService().signupOrLoginWithGoogle(idToken);
+    });
+}
+
+void AuthController::socialApple(const HttpRequestPtr &req,
+                                  std::function<void(const HttpResponsePtr &)> &&callback)
+{
+    handleSocialLogin(req, callback, [](const std::string &idToken) {
+        return app_context::authService().signupOrLoginWithApple(idToken);
+    });
 }
 
 }  // namespace controllers

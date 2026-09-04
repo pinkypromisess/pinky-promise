@@ -86,7 +86,12 @@ bool verifyPassword(const std::string &encodedHash, const std::string &password)
 
 }  // namespace
 
-AuthService::AuthService(drogon::orm::DbClientPtr db) : db_(std::move(db))
+AuthService::AuthService(drogon::orm::DbClientPtr db,
+                          std::shared_ptr<auth::SocialTokenVerifier> googleVerifier,
+                          std::shared_ptr<auth::SocialTokenVerifier> appleVerifier)
+  : db_(std::move(db)),
+    googleVerifier_(std::move(googleVerifier)),
+    appleVerifier_(std::move(appleVerifier))
 {
 }
 
@@ -144,6 +149,103 @@ std::string AuthService::login(const std::string &email, const std::string &pass
     }
 
     return rows[0]["id"].as<std::string>();
+}
+
+SocialLoginResult AuthService::socialLoginWith(const std::string &provider,
+                                                const std::string &idToken,
+                                                auth::SocialTokenVerifier &verifier)
+{
+    auto identity = verifier.verify(idToken);
+    if (!identity)
+    {
+        throw AuthUnauthorizedException("INVALID_SOCIAL_TOKEN", "Could not verify this token.");
+    }
+
+    // One atomic statement, same data-modifying-CTEs-chained-by-subquery/
+    // RETURNING idiom as BlockService::createBlock / PinkyPromiseService::
+    // confirm:
+    //  - existing_identity: the (provider, provider_subject) row, if this
+    //    identity has signed in before.
+    //  - inserted_user: only fires (INSERT ... SELECT ... WHERE NOT
+    //    EXISTS) when no existing_identity row was found -- a brand new
+    //    users row, password_hash left NULL (this account has no
+    //    password). email is the token's verified email UNLESS a
+    //    *different* users row already has that exact email (see the
+    //    note below on why), in which case it's left NULL here too --
+    //    either way, auth_identities.email_at_signup (always set, never
+    //    NULL) is the durable record of the email this identity actually
+    //    vouches for.
+    //  - inserted_identity: SELECTs its user_id FROM inserted_user, so it
+    //    only ever produces a row in the same "new" case as inserted_user
+    //    above -- the auth_identities row for this (provider, subject).
+    //  - Final SELECT: inserted_identity's row (was_created = true) UNION
+    //    ALL existing_identity's row (was_created = false, guarded by
+    //    NOT EXISTS(inserted_identity) so a genuinely new signup can't
+    //    double-count) -- always yields exactly one row.
+    //
+    // No cross-provider linking: this lookup is keyed ONLY on (provider,
+    // provider_subject), never on email, so the same real person signing
+    // up with Google then later with Apple (even with the same email
+    // both times) always produces two separate users rows -- FT-8,
+    // deliberately not built here. That collides with TWO constraints on
+    // the pre-existing `users` table (migration 001, owned by Module A,
+    // predates F.2 and isn't touched here): email is UNIQUE, so a second
+    // row can't store the identical value the first one has; AND
+    // users_email_or_phone_present (email IS NOT NULL OR phone IS NOT
+    // NULL) means leaving it NULL isn't an option either, since a social
+    // account has no phone. Resolved by giving whichever row loses that
+    // race a deterministic, guaranteed-unique PLACEHOLDER value instead
+    // of a real email -- "<provider_subject>@<provider>.social-placeholder.invalid"
+    // (".invalid" is RFC 2606's reserved TLD for exactly "not a real
+    // address", and provider_subject is already unique per provider per
+    // the UNIQUE(provider, provider_subject) constraint, so this can
+    // never collide). The TRUE verified email is never lost either way --
+    // it's always in this same row's auth_identities.email_at_signup
+    // (NOT NULL, no uniqueness constraint). This service never reads
+    // users.email for a social account, so login-by-password for that
+    // email is unaffected: it still correctly resolves to whichever
+    // users row actually holds it (or 401s if neither does). This is this
+    // module's one real spec/schema conflict; flagged in the checkpoint
+    // report rather than silently deciding it alone.
+    auto rows = db_->execSqlSync(
+        "WITH existing_identity AS ("
+        "  SELECT user_id FROM auth_identities "
+        "  WHERE provider = $1 AND provider_subject = $2"
+        "), inserted_user AS ("
+        "  INSERT INTO users (email) "
+        "  SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE email = $3) "
+        "              THEN $2 || '@' || $1 || '.social-placeholder.invalid' "
+        "              ELSE $3 END "
+        "  WHERE NOT EXISTS (SELECT 1 FROM existing_identity) "
+        "  RETURNING id"
+        "), inserted_identity AS ("
+        "  INSERT INTO auth_identities (user_id, provider, provider_subject, email_at_signup) "
+        "  SELECT id, $1, $2, $3 FROM inserted_user "
+        "  RETURNING user_id"
+        ") "
+        "SELECT user_id, true AS was_created FROM inserted_identity "
+        "UNION ALL "
+        "SELECT user_id, false AS was_created FROM existing_identity "
+        "WHERE NOT EXISTS (SELECT 1 FROM inserted_identity)",
+        provider,
+        identity->subject,
+        identity->email);
+
+    const auto &row = rows[0];
+    SocialLoginResult result;
+    result.userId = row["user_id"].as<std::string>();
+    result.wasCreated = row["was_created"].as<bool>();
+    return result;
+}
+
+SocialLoginResult AuthService::signupOrLoginWithGoogle(const std::string &idToken)
+{
+    return socialLoginWith("google", idToken, *googleVerifier_);
+}
+
+SocialLoginResult AuthService::signupOrLoginWithApple(const std::string &idToken)
+{
+    return socialLoginWith("apple", idToken, *appleVerifier_);
 }
 
 }  // namespace services

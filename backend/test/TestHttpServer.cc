@@ -24,6 +24,8 @@ constexpr const char *kTestJwtSecret = "local-dev-insecure-secret";
 std::shared_ptr<verification::StubFaceVerificationProvider> sharedProvider;
 std::shared_ptr<storage::StubGcsUploadUrlProvider> sharedPhotoUploadProvider;
 std::shared_ptr<notifications::StubReminderProvider> sharedReminderProvider;
+std::shared_ptr<auth::StubSocialTokenVerifier> sharedGoogleSocialVerifier;
+std::shared_ptr<auth::StubSocialTokenVerifier> sharedAppleSocialVerifier;
 
 std::string base64UrlEncode(const std::string &data)
 {
@@ -72,7 +74,14 @@ std::string ensureTestServerRunning()
         sharedProvider = std::make_shared<verification::StubFaceVerificationProvider>();
         sharedPhotoUploadProvider = std::make_shared<storage::StubGcsUploadUrlProvider>();
         sharedReminderProvider = std::make_shared<notifications::StubReminderProvider>();
-        app_context::init(db, sharedProvider, sharedPhotoUploadProvider, sharedReminderProvider);
+        sharedGoogleSocialVerifier = std::make_shared<auth::StubSocialTokenVerifier>();
+        sharedAppleSocialVerifier = std::make_shared<auth::StubSocialTokenVerifier>();
+        app_context::init(db,
+                           sharedProvider,
+                           sharedPhotoUploadProvider,
+                           sharedReminderProvider,
+                           sharedGoogleSocialVerifier,
+                           sharedAppleSocialVerifier);
 
         std::promise<void> ready;
         auto readyFuture = ready.get_future();
@@ -103,6 +112,16 @@ std::shared_ptr<storage::StubGcsUploadUrlProvider> testServerPhotoUploadProvider
 std::shared_ptr<notifications::StubReminderProvider> testServerReminderProvider()
 {
     return sharedReminderProvider;
+}
+
+std::shared_ptr<auth::StubSocialTokenVerifier> testServerGoogleSocialVerifier()
+{
+    return sharedGoogleSocialVerifier;
+}
+
+std::shared_ptr<auth::StubSocialTokenVerifier> testServerAppleSocialVerifier()
+{
+    return sharedAppleSocialVerifier;
 }
 
 std::string signTestJwt(const std::string &userId)

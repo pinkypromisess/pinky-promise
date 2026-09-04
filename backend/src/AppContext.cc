@@ -23,7 +23,9 @@ std::unique_ptr<services::AuthService> authServiceInstance;
 void init(drogon::orm::DbClientPtr db,
           std::shared_ptr<verification::FaceVerificationProvider> faceVerificationProvider,
           std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider,
-          std::shared_ptr<notifications::ReminderProvider> reminderProvider)
+          std::shared_ptr<notifications::ReminderProvider> reminderProvider,
+          std::shared_ptr<auth::SocialTokenVerifier> googleSocialVerifier,
+          std::shared_ptr<auth::SocialTokenVerifier> appleSocialVerifier)
 {
     profileServiceInstance = std::make_unique<services::ProfileService>(db);
     proposalServiceInstance = std::make_unique<services::ProposalService>(db);
@@ -34,10 +36,11 @@ void init(drogon::orm::DbClientPtr db,
         std::make_unique<services::ReminderService>(db, std::move(reminderProvider));
     blockServiceInstance = std::make_unique<services::BlockService>(db);
     reportServiceInstance = std::make_unique<services::ReportService>(db);
-    // AuthService only needs the DB pool (no verification/photo-upload/
-    // reminder provider), so it's constructed from `db` like the other
-    // DB-only services above -- init()'s signature didn't need to change.
-    authServiceInstance = std::make_unique<services::AuthService>(db);
+    // AuthService needs the DB pool plus one auth::SocialTokenVerifier per
+    // provider (Module F.2) -- constructed from `db` like the other
+    // DB-only services above, still before db's final std::move() below.
+    authServiceInstance = std::make_unique<services::AuthService>(
+        db, std::move(googleSocialVerifier), std::move(appleSocialVerifier));
     verificationServiceInstance = std::make_unique<services::VerificationService>(
         std::move(db), std::move(faceVerificationProvider));
     photoUploadServiceInstance =

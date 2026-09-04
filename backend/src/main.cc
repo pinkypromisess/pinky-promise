@@ -4,6 +4,8 @@
 #include <string>
 
 #include "AppContext.h"
+#include "auth/AppleTokenVerifier.h"
+#include "auth/GoogleTokenVerifier.h"
 #include "notifications/StubReminderProvider.h"
 #include "services/ReminderSweepScheduler.h"
 #include "storage/StubGcsUploadUrlProvider.h"
@@ -75,8 +77,21 @@ int main(int argc, char *argv[])
         // this repo/environment can reach real push infra to verify one
         // end-to-end yet (same situation as the two providers above).
         auto reminderProvider = std::make_shared<notifications::StubReminderProvider>();
-        app_context::init(
-            drogon::app().getDbClient(), faceProvider, photoUploadProvider, reminderProvider);
+        // Unlike the three stubs above, Google/Apple social login (Module
+        // F.2) needs no cloud-specific credentials or metadata server --
+        // just a live JWKS fetch and the GOOGLE_OAUTH_CLIENT_ID/
+        // APPLE_SERVICES_ID env vars (see JwksSocialTokenVerifier), both
+        // reachable from any environment with normal internet access --
+        // so the real verifiers are wired here unconditionally, not
+        // stubbed like verification/photo-upload/push.
+        auto googleSocialVerifier = auth::makeGoogleTokenVerifier();
+        auto appleSocialVerifier = auth::makeAppleTokenVerifier();
+        app_context::init(drogon::app().getDbClient(),
+                           faceProvider,
+                           photoUploadProvider,
+                           reminderProvider,
+                           googleSocialVerifier,
+                           appleSocialVerifier);
 
         // Starts the D.2 periodic sweep (CUJ #5's "1 hour before" reminder
         // job) on its own dedicated loop thread -- see
