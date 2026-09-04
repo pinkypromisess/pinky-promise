@@ -478,8 +478,9 @@ paths:
         '403':
           description: >
             `interested` swipe blocked — caller isn't verified
-            (`PROFILE_NOT_VERIFIED`) or has hit the rolling-24h interested
-            cap (`INTERESTED_DAILY_CAP_REACHED`).
+            (`PROFILE_NOT_VERIFIED`), has hit the rolling-24h interested
+            cap (`INTERESTED_DAILY_CAP_REACHED`), or the swipe is between
+            a pair where either has blocked the other (`BLOCKED`).
           content:
             application/json:
               schema:
