@@ -4,11 +4,13 @@
 
 #include <memory>
 
+#include "notifications/ReminderProvider.h"
 #include "services/ConversationService.h"
 #include "services/PhotoUploadService.h"
 #include "services/PinkyPromiseService.h"
 #include "services/ProfileService.h"
 #include "services/ProposalService.h"
+#include "services/ReminderService.h"
 #include "services/SwipeService.h"
 #include "services/VerificationService.h"
 #include "storage/GcsUploadUrlProvider.h"
@@ -22,7 +24,8 @@ namespace app_context
 {
 void init(drogon::orm::DbClientPtr db,
           std::shared_ptr<verification::FaceVerificationProvider> faceVerificationProvider,
-          std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider);
+          std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider,
+          std::shared_ptr<notifications::ReminderProvider> reminderProvider);
 
 services::ProfileService &profileService();
 services::VerificationService &verificationService();
@@ -31,5 +34,6 @@ services::PhotoUploadService &photoUploadService();
 services::SwipeService &swipeService();
 services::ConversationService &conversationService();
 services::PinkyPromiseService &pinkyPromiseService();
+services::ReminderService &reminderService();
 
 }  // namespace app_context

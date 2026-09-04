@@ -23,6 +23,7 @@ constexpr const char *kTestJwtSecret = "local-dev-insecure-secret";
 
 std::shared_ptr<verification::StubFaceVerificationProvider> sharedProvider;
 std::shared_ptr<storage::StubGcsUploadUrlProvider> sharedPhotoUploadProvider;
+std::shared_ptr<notifications::StubReminderProvider> sharedReminderProvider;
 
 std::string base64UrlEncode(const std::string &data)
 {
@@ -70,7 +71,8 @@ std::string ensureTestServerRunning()
 
         sharedProvider = std::make_shared<verification::StubFaceVerificationProvider>();
         sharedPhotoUploadProvider = std::make_shared<storage::StubGcsUploadUrlProvider>();
-        app_context::init(db, sharedProvider, sharedPhotoUploadProvider);
+        sharedReminderProvider = std::make_shared<notifications::StubReminderProvider>();
+        app_context::init(db, sharedProvider, sharedPhotoUploadProvider, sharedReminderProvider);
 
         std::promise<void> ready;
         auto readyFuture = ready.get_future();
@@ -96,6 +98,11 @@ std::shared_ptr<verification::StubFaceVerificationProvider> testServerVerificati
 std::shared_ptr<storage::StubGcsUploadUrlProvider> testServerPhotoUploadProvider()
 {
     return sharedPhotoUploadProvider;
+}
+
+std::shared_ptr<notifications::StubReminderProvider> testServerReminderProvider()
+{
+    return sharedReminderProvider;
 }
 
 std::string signTestJwt(const std::string &userId)

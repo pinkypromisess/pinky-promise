@@ -13,18 +13,22 @@ std::unique_ptr<services::PhotoUploadService> photoUploadServiceInstance;
 std::unique_ptr<services::SwipeService> swipeServiceInstance;
 std::unique_ptr<services::ConversationService> conversationServiceInstance;
 std::unique_ptr<services::PinkyPromiseService> pinkyPromiseServiceInstance;
+std::unique_ptr<services::ReminderService> reminderServiceInstance;
 
 }  // namespace
 
 void init(drogon::orm::DbClientPtr db,
           std::shared_ptr<verification::FaceVerificationProvider> faceVerificationProvider,
-          std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider)
+          std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider,
+          std::shared_ptr<notifications::ReminderProvider> reminderProvider)
 {
     profileServiceInstance = std::make_unique<services::ProfileService>(db);
     proposalServiceInstance = std::make_unique<services::ProposalService>(db);
     swipeServiceInstance = std::make_unique<services::SwipeService>(db);
     conversationServiceInstance = std::make_unique<services::ConversationService>(db);
     pinkyPromiseServiceInstance = std::make_unique<services::PinkyPromiseService>(db);
+    reminderServiceInstance =
+        std::make_unique<services::ReminderService>(db, std::move(reminderProvider));
     verificationServiceInstance = std::make_unique<services::VerificationService>(
         std::move(db), std::move(faceVerificationProvider));
     photoUploadServiceInstance =
@@ -96,6 +100,15 @@ services::PinkyPromiseService &pinkyPromiseService()
             "app_context::init() was not called before pinkyPromiseService()");
     }
     return *pinkyPromiseServiceInstance;
+}
+
+services::ReminderService &reminderService()
+{
+    if (!reminderServiceInstance)
+    {
+        throw std::runtime_error("app_context::init() was not called before reminderService()");
+    }
+    return *reminderServiceInstance;
 }
 
 }  // namespace app_context

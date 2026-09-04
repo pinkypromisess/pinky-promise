@@ -4,6 +4,7 @@
 #include <string>
 
 #include "AppContext.h"
+#include "notifications/StubReminderProvider.h"
 #include "storage/StubGcsUploadUrlProvider.h"
 #include "verification/StubFaceVerificationProvider.h"
 
@@ -68,7 +69,15 @@ int main(int argc, char *argv[])
         // nothing in local dev/CI can reach the metadata server or IAM
         // API it depends on.
         auto photoUploadProvider = std::make_shared<storage::StubGcsUploadUrlProvider>();
-        app_context::init(drogon::app().getDbClient(), faceProvider, photoUploadProvider);
+        // TODO: swap for a real FCM/APNs-backed ReminderProvider once push
+        // credentials are provisioned for this environment. Nothing in
+        // this repo/environment can reach real push infra to verify one
+        // end-to-end yet (same situation as the two providers above). Note
+        // D.1 wires no periodic trigger to call reminderService().runSweep()
+        // yet -- that lands in a later micro-step.
+        auto reminderProvider = std::make_shared<notifications::StubReminderProvider>();
+        app_context::init(
+            drogon::app().getDbClient(), faceProvider, photoUploadProvider, reminderProvider);
         LOG_INFO << "Module A (Profile & Verification) initialized.";
     });
 

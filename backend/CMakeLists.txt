@@ -26,6 +26,7 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/validation/SwipeValidation.cc
     ${CMAKE_SOURCE_DIR}/src/validation/MessageValidation.cc
     ${CMAKE_SOURCE_DIR}/src/verification/StubFaceVerificationProvider.cc
+    ${CMAKE_SOURCE_DIR}/src/notifications/StubReminderProvider.cc
     ${CMAKE_SOURCE_DIR}/src/storage/TimeUtils.cc
     ${CMAKE_SOURCE_DIR}/src/storage/GcsV4Signing.cc
     ${CMAKE_SOURCE_DIR}/src/storage/StubGcsUploadUrlProvider.cc
@@ -38,6 +39,7 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/services/ConversationExpiry.cc
     ${CMAKE_SOURCE_DIR}/src/services/ConversationService.cc
     ${CMAKE_SOURCE_DIR}/src/services/PinkyPromiseService.cc
+    ${CMAKE_SOURCE_DIR}/src/services/ReminderService.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProfileController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/VerificationController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProposalController.cc

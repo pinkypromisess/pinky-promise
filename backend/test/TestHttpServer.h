@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include "../src/notifications/StubReminderProvider.h"
 #include "../src/storage/StubGcsUploadUrlProvider.h"
 #include "../src/verification/StubFaceVerificationProvider.h"
 
@@ -34,6 +35,14 @@ std::shared_ptr<verification::StubFaceVerificationProvider> testServerVerificati
 // test server. Only valid after ensureTestServerRunning() has been called
 // at least once.
 std::shared_ptr<storage::StubGcsUploadUrlProvider> testServerPhotoUploadProvider();
+
+// The StubReminderProvider instance actually wired into the running test
+// server. There is no HTTP endpoint that drives it (see
+// backend/src/services/ReminderService.h) -- tests call
+// app_context::reminderService() directly and use this accessor's sent()
+// to assert on what it was asked to send. Only valid after
+// ensureTestServerRunning() has been called at least once.
+std::shared_ptr<notifications::StubReminderProvider> testServerReminderProvider();
 
 // Signs an HS256 JWT with `userId` as the `sub` claim, using the same
 // secret auth::AuthFilter falls back to when JWT_SECRET isn't set
