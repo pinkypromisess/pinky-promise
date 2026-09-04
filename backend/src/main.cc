@@ -5,6 +5,7 @@
 
 #include "AppContext.h"
 #include "notifications/StubReminderProvider.h"
+#include "services/ReminderSweepScheduler.h"
 #include "storage/StubGcsUploadUrlProvider.h"
 #include "verification/StubFaceVerificationProvider.h"
 
@@ -72,12 +73,21 @@ int main(int argc, char *argv[])
         // TODO: swap for a real FCM/APNs-backed ReminderProvider once push
         // credentials are provisioned for this environment. Nothing in
         // this repo/environment can reach real push infra to verify one
-        // end-to-end yet (same situation as the two providers above). Note
-        // D.1 wires no periodic trigger to call reminderService().runSweep()
-        // yet -- that lands in a later micro-step.
+        // end-to-end yet (same situation as the two providers above).
         auto reminderProvider = std::make_shared<notifications::StubReminderProvider>();
         app_context::init(
             drogon::app().getDbClient(), faceProvider, photoUploadProvider, reminderProvider);
+
+        // Starts the D.2 periodic sweep (CUJ #5's "1 hour before" reminder
+        // job) on its own dedicated loop thread -- see
+        // ReminderSweepScheduler's header for why not the main IO loop.
+        // `static` inside this once-only beginning-advice callback is what
+        // keeps it alive for the rest of the process's lifetime (see that
+        // class's header for why an instance must outlive construction);
+        // this needs no capture of its own to do that, so the callback
+        // above and this line both stay capture-free/lifetime-hazard-free.
+        static auto reminderSweepScheduler = std::make_shared<services::ReminderSweepScheduler>();
+
         LOG_INFO << "Module A (Profile & Verification) initialized.";
     });
 
