@@ -30,10 +30,11 @@ add_executable(pinky_promise_tests
     test_http_block.cc
     test_http_report.cc
     test_http_block_feed_swipe.cc
+    test_http_auth.cc
     ${CORE_SOURCES}
 )
 target_include_directories(pinky_promise_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pinky_promise_tests PRIVATE Drogon::Drogon OpenSSL::Crypto)
+target_link_libraries(pinky_promise_tests PRIVATE Drogon::Drogon OpenSSL::Crypto ${ARGON2_TARGET})
 
 include(ParseAndAddDrogonTests)
 ParseAndAddDrogonTests(pinky_promise_tests)

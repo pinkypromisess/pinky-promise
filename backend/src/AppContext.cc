@@ -16,6 +16,7 @@ std::unique_ptr<services::PinkyPromiseService> pinkyPromiseServiceInstance;
 std::unique_ptr<services::ReminderService> reminderServiceInstance;
 std::unique_ptr<services::BlockService> blockServiceInstance;
 std::unique_ptr<services::ReportService> reportServiceInstance;
+std::unique_ptr<services::AuthService> authServiceInstance;
 
 }  // namespace
 
@@ -33,6 +34,10 @@ void init(drogon::orm::DbClientPtr db,
         std::make_unique<services::ReminderService>(db, std::move(reminderProvider));
     blockServiceInstance = std::make_unique<services::BlockService>(db);
     reportServiceInstance = std::make_unique<services::ReportService>(db);
+    // AuthService only needs the DB pool (no verification/photo-upload/
+    // reminder provider), so it's constructed from `db` like the other
+    // DB-only services above -- init()'s signature didn't need to change.
+    authServiceInstance = std::make_unique<services::AuthService>(db);
     verificationServiceInstance = std::make_unique<services::VerificationService>(
         std::move(db), std::move(faceVerificationProvider));
     photoUploadServiceInstance =
@@ -131,6 +136,15 @@ services::ReportService &reportService()
         throw std::runtime_error("app_context::init() was not called before reportService()");
     }
     return *reportServiceInstance;
+}
+
+services::AuthService &authService()
+{
+    if (!authServiceInstance)
+    {
+        throw std::runtime_error("app_context::init() was not called before authService()");
+    }
+    return *authServiceInstance;
 }
 
 }  // namespace app_context

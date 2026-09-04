@@ -4,6 +4,7 @@
 #include <openssl/hmac.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <json/json.h>
 
 #include <drogon/utils/Utilities.h>
@@ -12,6 +13,16 @@ namespace auth
 {
 namespace
 {
+// The inverse of base64UrlDecode() below: no padding, '-'/'_' instead of
+// '+'/'/'.
+std::string base64UrlEncode(const std::string &data)
+{
+    return drogon::utils::base64Encode(reinterpret_cast<const unsigned char *>(data.data()),
+                                        static_cast<unsigned int>(data.size()),
+                                        /*urlSafe=*/true,
+                                        /*padded=*/false);
+}
+
 std::string stripBearerPrefix(const std::string &header)
 {
     constexpr const char *kPrefix = "Bearer ";
@@ -149,6 +160,51 @@ std::optional<std::string> verifyAndExtractUserId(const std::string &bearerToken
     }
 
     return payload["sub"].asString();
+}
+
+std::string signJwt(const std::string &userId, const std::string &hmacSecret, int64_t ttlSeconds)
+{
+    Json::Value header;
+    header["alg"] = "HS256";
+    header["typ"] = "JWT";
+
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    Json::Value payload;
+    payload["sub"] = userId;
+    payload["exp"] = static_cast<Json::Int64>(now + ttlSeconds);
+
+    Json::StreamWriterBuilder writer;
+    writer["indentation"] = "";
+    const std::string headerB64 = base64UrlEncode(Json::writeString(writer, header));
+    const std::string payloadB64 = base64UrlEncode(Json::writeString(writer, payload));
+    const std::string signingInput = headerB64 + "." + payloadB64;
+
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digestLen = 0;
+    HMAC(EVP_sha256(),
+         hmacSecret.data(),
+         static_cast<int>(hmacSecret.size()),
+         reinterpret_cast<const unsigned char *>(signingInput.data()),
+         signingInput.size(),
+         digest,
+         &digestLen);
+    const std::string signatureB64 =
+        base64UrlEncode(std::string(reinterpret_cast<const char *>(digest), digestLen));
+
+    return signingInput + "." + signatureB64;
+}
+
+std::string signingSecret()
+{
+    if (const char *fromEnv = std::getenv("JWT_SECRET"))
+    {
+        return fromEnv;
+    }
+    // Local-dev-only fallback so the server is runnable without extra
+    // setup. Cloud Run deployments must set JWT_SECRET.
+    return "local-dev-insecure-secret";
 }
 
 }  // namespace auth

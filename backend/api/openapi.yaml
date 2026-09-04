@@ -27,6 +27,7 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: Auth
   - name: Profile
   - name: Verification
   - name: Proposal
@@ -36,6 +37,82 @@ tags:
   - name: Report
 
 paths:
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: Create an account with email + password
+      description: >
+        Module F.1 (email+password auth). Creates a new `users` row and
+        issues a bearer token immediately — there is no separate
+        email-verification step in this MVP. Deliberately NOT behind
+        bearerAuth (`security: []` below): there is no token yet when a
+        client is signing up. Any existing `users.email` match (whether
+        it already has a password set, or is a social-only account from a
+        future signup method) is treated as taken.
+      operationId: signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthCredentialsRequest'
+      responses:
+        '201':
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: >
+            `EMAIL_INVALID` (missing or malformed email) or
+            `PASSWORD_TOO_SHORT` (fewer than 8 characters).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: EMAIL_ALREADY_REGISTERED — an account with this email already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email + password
+      description: >
+        Module F.1 (email+password auth). Deliberately NOT behind
+        bearerAuth (`security: []` below): there is no token yet when a
+        client is logging in. An unknown email, an account with no
+        password set (e.g. a social-only account from a future signup
+        method), and a wrong password are all indistinguishable in the
+        response — same `401 INVALID_CREDENTIALS` — to avoid a
+        user-enumeration vector.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthCredentialsRequest'
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: INVALID_CREDENTIALS — unknown email, no password set, or wrong password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /profile:
     put:
       tags: [Profile]
@@ -917,6 +994,36 @@ components:
             $ref: '#/components/schemas/Error'
 
   schemas:
+    AuthCredentialsRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: >
+            No composition requirements beyond an 8-character minimum
+            (OWASP/NIST current guidance favors length over forced
+            uppercase/digit/symbol rules for this kind of MVP).
+
+    AuthResponse:
+      type: object
+      required: [token, user_id]
+      properties:
+        token:
+          type: string
+          description: >
+            HS256 JWT, `sub` = user_id. Single long-lived access token
+            (30-day expiry), no refresh-token mechanism — a deliberate MVP
+            simplification.
+        user_id:
+          type: string
+          format: uuid
+
     Error:
       type: object
       required: [error, message]

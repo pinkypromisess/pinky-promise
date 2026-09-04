@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "notifications/ReminderProvider.h"
+#include "services/AuthService.h"
 #include "services/BlockService.h"
 #include "services/ConversationService.h"
 #include "services/PhotoUploadService.h"
@@ -39,5 +40,6 @@ services::PinkyPromiseService &pinkyPromiseService();
 services::ReminderService &reminderService();
 services::BlockService &blockService();
 services::ReportService &reportService();
+services::AuthService &authService();
 
 }  // namespace app_context

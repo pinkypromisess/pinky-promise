@@ -2,23 +2,10 @@
 
 #include "JwtAuth.h"
 
-#include <cstdlib>
-
 namespace auth
 {
 namespace
 {
-std::string jwtSecret()
-{
-    if (const char *fromEnv = std::getenv("JWT_SECRET"))
-    {
-        return fromEnv;
-    }
-    // Local-dev-only fallback so the server is runnable without extra
-    // setup. Cloud Run deployments must set JWT_SECRET.
-    return "local-dev-insecure-secret";
-}
-
 void respondUnauthorized(drogon::FilterCallback &fcb, const std::string &message)
 {
     Json::Value body;
@@ -42,7 +29,7 @@ void AuthFilter::doFilter(const drogon::HttpRequestPtr &req,
         return;
     }
 
-    auto userId = verifyAndExtractUserId(authHeader, jwtSecret());
+    auto userId = verifyAndExtractUserId(authHeader, signingSecret());
     if (!userId)
     {
         respondUnauthorized(fcb, "Invalid or expired bearer token.");
