@@ -78,6 +78,30 @@ Swipe SwipeService::recordSwipe(const std::string &swiperUserId,
     // unverified, uncapped).
     if (action == "interested")
     {
+        // Module E unblock (E.3): CUJ #10's "no new Conversation can be
+        // started between them" -- since a Conversation is only ever
+        // created via an `interested` swipe (see the INSERT below), this
+        // is the one place that needs to reject one, in EITHER direction
+        // (blocks is stored as one directional row per pair; a block from
+        // either side blocks a new Conversation both ways). This is
+        // defense-in-depth for a direct API call bypassing the feed --
+        // ProposalService::getFeed (E.3's other deliverable) already
+        // keeps a blocked creator's proposals out of the feed under
+        // normal use, so this check is the backstop, not the primary
+        // mechanism. Checked before the verified/cap gates below, and
+        // does not apply to `pass` at all.
+        auto blockRows = db_->execSqlSync(
+            "SELECT 1 FROM blocks "
+            "WHERE (blocker_user_id = $1 AND blocked_user_id = $2) "
+            "   OR (blocker_user_id = $2 AND blocked_user_id = $1)",
+            swiperUserId,
+            creatorUserId);
+        if (!blockRows.empty())
+        {
+            throw SwipeForbiddenException(
+                "BLOCKED", "You cannot express interest in a Proposal from a blocked user.");
+        }
+
         auto profileRows =
             db_->execSqlSync("SELECT verified FROM profiles WHERE user_id = $1", swiperUserId);
         const bool verified = !profileRows.empty() && profileRows[0]["verified"].as<bool>();

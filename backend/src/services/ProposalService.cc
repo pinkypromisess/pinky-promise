@@ -244,16 +244,23 @@ std::vector<ProposalFeedItem> ProposalService::getFeed(const std::string &userId
     // (swipes has UNIQUE (proposal_id, swiper_user_id), so no row fan-out).
     // Columns are qualified with `p.` because `id` / `created_at` are
     // ambiguous once `swipes` is joined.
+    //
+    // Module E unblock (E.3): a second LEFT JOIN + `b.id IS NULL`
+    // anti-join, same shape, excludes any proposal whose creator has a
+    // block with the caller in EITHER direction (blocks has UNIQUE
+    // (blocker_user_id, blocked_user_id) per ordered pair, and the OR
+    // only ever matches at most one row per direction, so no row
+    // fan-out here either).
     const std::string activeNotOwnClause =
         "SELECT p.id, p.creator_user_id, p.activity_text, p.event_time, p.location_lat, "
         "p.location_lng, p.location_address, p.payment_type, p.looking_for_text, "
         "p.reveal_occupation, p.reveal_relationship_status, p.status, p.created_at "
         "FROM proposals p "
         "LEFT JOIN swipes s ON s.proposal_id = p.id AND s.swiper_user_id = $1 "
+        "LEFT JOIN blocks b ON (b.blocker_user_id = $1 AND b.blocked_user_id = p.creator_user_id) "
+        "                   OR (b.blocker_user_id = p.creator_user_id AND b.blocked_user_id = $1) "
         "WHERE p.status = 'active' AND p.creator_user_id != $1 AND s.id IS NULL "
-        // TODO(Module E): exclude proposals from creators the caller has
-        // blocked or is blocked by, once the blocks table exists.
-        ;
+        "AND b.id IS NULL ";
 
     auto proposalsResult =
         (lat.has_value() && lng.has_value())
