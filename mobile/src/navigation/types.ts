@@ -4,4 +4,6 @@ export type RootStackParamList = {
   ProfileForm: { mode: 'create' | 'edit' };
   PhotoManagement: undefined;
   Verification: undefined;
+  Conversations: undefined;
+  ConversationDetail: { conversationId: string };
 };

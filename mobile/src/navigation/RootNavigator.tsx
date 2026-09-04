@@ -2,6 +2,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import BootstrapScreen from '../screens/BootstrapScreen';
+import ConversationDetailScreen from '../screens/ConversationDetailScreen';
+import ConversationListScreen from '../screens/ConversationListScreen';
 import PhotoManagementScreen from '../screens/PhotoManagementScreen';
 import ProfileFormScreen from '../screens/ProfileFormScreen';
 import ProfileHomeScreen from '../screens/ProfileHomeScreen';
@@ -23,6 +25,8 @@ export default function RootNavigator() {
           options={{ title: 'Manage Photos' }}
         />
         <Stack.Screen name="Verification" component={VerificationScreen} options={{ title: 'Verify' }} />
+        <Stack.Screen name="Conversations" component={ConversationListScreen} options={{ title: 'Conversations' }} />
+        <Stack.Screen name="ConversationDetail" component={ConversationDetailScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
