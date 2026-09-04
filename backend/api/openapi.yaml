@@ -32,6 +32,7 @@ tags:
   - name: Proposal
   - name: Conversation
   - name: PinkyPromise
+  - name: Block
 
 paths:
   /profile:
@@ -782,6 +783,61 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /blocks:
+    post:
+      tags: [Block]
+      summary: Block another user (CUJ #10)
+      description: >
+        Blocks `blocked_user_id` from the caller's side. Immediately mutual
+        in effect: cascades in the SAME atomic statement as the insert to
+        close any Conversation between the two (status IN
+        (`active`,`pinky_promised`) -> `expired`, checked in EITHER
+        direction since a Conversation could have either user as
+        `proposer_user_id`) and cancel any `confirmed` PinkyPromise on
+        those Conversations -> `cancelled`. `proposals.status` is left
+        untouched -- blocking closes relationship touchpoints between the
+        two users, it does not cancel a Proposal (contrast with
+        `DELETE /proposals/{id}`).
+
+
+        Re-blocking the same direction is idempotent: if a block
+        (caller -> `blocked_user_id`) already exists, this returns 200
+        with the existing row and does not re-run the cascade.
+      operationId: createBlock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockCreateRequest'
+      responses:
+        '201':
+          description: Block created; cascade ran.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Block'
+        '200':
+          description: >
+            Idempotent re-block -- a block in this direction already
+            existed. Cascade was not re-run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Block'
+        '400':
+          description: >
+            The caller tried to block themselves (`CANNOT_BLOCK_SELF`), or
+            `blocked_user_id` is missing/malformed/doesn't name a real user
+            (`USER_NOT_FOUND` -- deliberately 400, not 404, since this is a
+            body-field validation issue).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1413,3 +1469,54 @@ components:
         created_at:
           type: string
           format: date-time
+
+    BlockCreateRequest:
+      type: object
+      required: [blocked_user_id]
+      properties:
+        blocked_user_id:
+          type: string
+          format: uuid
+
+    Block:
+      type: object
+      required: [id, blocker_user_id, blocked_user_id, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        blocker_user_id:
+          type: string
+          format: uuid
+        blocked_user_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+
+    ReportTargetType:
+      type: string
+      enum: [profile, proposal, conversation]
+      description: >
+        Stub schema only -- POST /reports is not built yet (E.2). Listed
+        here since the `reports` table already exists (migration 009).
+
+    ReportReason:
+      type: string
+      enum: [harassment, fake_profile, inappropriate_content, safety_concern, other]
+
+    ReportCreateRequest:
+      type: object
+      required: [target_type, target_id, reason, details_text]
+      properties:
+        target_type:
+          $ref: '#/components/schemas/ReportTargetType'
+        target_id:
+          type: string
+          format: uuid
+        reason:
+          $ref: '#/components/schemas/ReportReason'
+        details_text:
+          type: string
+          maxLength: 2000

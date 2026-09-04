@@ -27,6 +27,7 @@ add_executable(pinky_promise_tests
     test_http_profile_bare_view.cc
     test_reminder_service.cc
     test_reminder_sweep_scheduler.cc
+    test_http_block.cc
     ${CORE_SOURCES}
 )
 target_include_directories(pinky_promise_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)

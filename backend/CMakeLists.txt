@@ -41,12 +41,14 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/services/PinkyPromiseService.cc
     ${CMAKE_SOURCE_DIR}/src/services/ReminderService.cc
     ${CMAKE_SOURCE_DIR}/src/services/ReminderSweepScheduler.cc
+    ${CMAKE_SOURCE_DIR}/src/services/BlockService.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProfileController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/VerificationController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProposalController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/SwipeController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ConversationController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/PinkyPromiseController.cc
+    ${CMAKE_SOURCE_DIR}/src/controllers/BlockController.cc
 )
 
 add_executable(pinky_promise_backend src/main.cc ${CORE_SOURCES})
