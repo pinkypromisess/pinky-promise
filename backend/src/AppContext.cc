@@ -15,6 +15,7 @@ std::unique_ptr<services::ConversationService> conversationServiceInstance;
 std::unique_ptr<services::PinkyPromiseService> pinkyPromiseServiceInstance;
 std::unique_ptr<services::ReminderService> reminderServiceInstance;
 std::unique_ptr<services::BlockService> blockServiceInstance;
+std::unique_ptr<services::ReportService> reportServiceInstance;
 
 }  // namespace
 
@@ -31,6 +32,7 @@ void init(drogon::orm::DbClientPtr db,
     reminderServiceInstance =
         std::make_unique<services::ReminderService>(db, std::move(reminderProvider));
     blockServiceInstance = std::make_unique<services::BlockService>(db);
+    reportServiceInstance = std::make_unique<services::ReportService>(db);
     verificationServiceInstance = std::make_unique<services::VerificationService>(
         std::move(db), std::move(faceVerificationProvider));
     photoUploadServiceInstance =
@@ -120,6 +122,15 @@ services::BlockService &blockService()
         throw std::runtime_error("app_context::init() was not called before blockService()");
     }
     return *blockServiceInstance;
+}
+
+services::ReportService &reportService()
+{
+    if (!reportServiceInstance)
+    {
+        throw std::runtime_error("app_context::init() was not called before reportService()");
+    }
+    return *reportServiceInstance;
 }
 
 }  // namespace app_context

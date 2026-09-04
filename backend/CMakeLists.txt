@@ -25,6 +25,7 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/validation/PhotoUploadValidation.cc
     ${CMAKE_SOURCE_DIR}/src/validation/SwipeValidation.cc
     ${CMAKE_SOURCE_DIR}/src/validation/MessageValidation.cc
+    ${CMAKE_SOURCE_DIR}/src/validation/ReportValidation.cc
     ${CMAKE_SOURCE_DIR}/src/verification/StubFaceVerificationProvider.cc
     ${CMAKE_SOURCE_DIR}/src/notifications/StubReminderProvider.cc
     ${CMAKE_SOURCE_DIR}/src/storage/TimeUtils.cc
@@ -42,6 +43,7 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/services/ReminderService.cc
     ${CMAKE_SOURCE_DIR}/src/services/ReminderSweepScheduler.cc
     ${CMAKE_SOURCE_DIR}/src/services/BlockService.cc
+    ${CMAKE_SOURCE_DIR}/src/services/ReportService.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProfileController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/VerificationController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/ProposalController.cc
@@ -49,6 +51,7 @@ set(CORE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/controllers/ConversationController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/PinkyPromiseController.cc
     ${CMAKE_SOURCE_DIR}/src/controllers/BlockController.cc
+    ${CMAKE_SOURCE_DIR}/src/controllers/ReportController.cc
 )
 
 add_executable(pinky_promise_backend src/main.cc ${CORE_SOURCES})

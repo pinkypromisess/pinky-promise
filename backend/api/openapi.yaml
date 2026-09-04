@@ -33,6 +33,7 @@ tags:
   - name: Conversation
   - name: PinkyPromise
   - name: Block
+  - name: Report
 
 paths:
   /profile:
@@ -838,6 +839,63 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /reports:
+    post:
+      tags: [Report]
+      summary: Report a Profile, Proposal, or Conversation (CUJ #10)
+      description: >
+        Submits a Report against `target_type`/`target_id` and, as a side
+        effect, auto-blocks the resolved reported user (reporter ->
+        reported user) by calling the existing `POST /blocks` logic --
+        same cascade, same idempotency. Reports are NOT deduplicated the
+        way Blocks are: reporting the same target twice creates two
+        separate Report rows (the second auto-block call is a no-op
+        thanks to Block's own idempotency, not because the Report layer
+        dedupes anything).
+
+
+        `target_type` resolves to the user being reported as follows:
+        `profile` -- `target_id` IS that user's id directly; `proposal` --
+        that Proposal's `creator_user_id`; `conversation` -- whichever
+        participant is NOT the caller (the caller must be a participant,
+        else 400 `NOT_A_PARTICIPANT`). Reporting yourself (the resolved
+        reported-user-id equals the caller) is rejected with 400
+        `CANNOT_REPORT_SELF` before anything is created.
+      operationId: createReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCreateRequest'
+      responses:
+        '201':
+          description: Report created (`status: open`); reported user auto-blocked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          description: >
+            `target_type`/`reason` not one of the allowed values
+            (`TARGET_TYPE_INVALID`/`REASON_INVALID`), malformed
+            `target_id` (`TARGET_ID_INVALID`), the caller isn't a
+            participant in a `conversation`-type target
+            (`NOT_A_PARTICIPANT`), or the resolved reported user is the
+            caller (`CANNOT_REPORT_SELF`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such profile/proposal/conversation (`TARGET_NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1498,9 +1556,7 @@ components:
     ReportTargetType:
       type: string
       enum: [profile, proposal, conversation]
-      description: >
-        Stub schema only -- POST /reports is not built yet (E.2). Listed
-        here since the `reports` table already exists (migration 009).
+      description: What kind of thing `target_id` names. See `POST /reports`.
 
     ReportReason:
       type: string
@@ -1520,3 +1576,44 @@ components:
         details_text:
           type: string
           maxLength: 2000
+
+    ReportStatus:
+      type: string
+      enum: [open, reviewed]
+      description: >
+        Always `open` on creation (the column default) -- no automated
+        review/suspension logic for MVP; reports accumulate for manual
+        periodic review.
+
+    Report:
+      type: object
+      required:
+        - id
+        - reporter_user_id
+        - target_type
+        - target_id
+        - reason
+        - details_text
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        reporter_user_id:
+          type: string
+          format: uuid
+        target_type:
+          $ref: '#/components/schemas/ReportTargetType'
+        target_id:
+          type: string
+          format: uuid
+        reason:
+          $ref: '#/components/schemas/ReportReason'
+        details_text:
+          type: string
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        created_at:
+          type: string
+          format: date-time
