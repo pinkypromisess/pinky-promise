@@ -2,6 +2,8 @@
 
 #include "../AppContext.h"
 #include "../services/ServiceErrors.h"
+#include "../validation/SwipeValidation.h"  // reused for validation::isLikelyUuid, same as
+                                             // ConversationService/PinkyPromiseService already do
 #include "ControllerUtils.h"
 
 using namespace drogon;
@@ -123,6 +125,45 @@ void ProfileController::getMyProfile(const HttpRequestPtr &req,
     {
         callback(errorResponse(
             k404NotFound, "PROFILE_NOT_FOUND", "You haven't created a profile yet."));
+    }
+}
+
+void ProfileController::getUserProfile(const HttpRequestPtr &req,
+                                        std::function<void(const HttpResponsePtr &)> &&callback,
+                                        std::string userId)
+{
+    (void)req;  // auth::AuthFilter has already required a valid caller; the
+                // caller's own id isn't otherwise needed for a bare view.
+    if (!validation::isLikelyUuid(userId))
+    {
+        callback(errorResponse(k404NotFound, "PROFILE_NOT_FOUND", "No such profile."));
+        return;
+    }
+    try
+    {
+        auto profile = app_context::profileService().getProfile(userId);
+
+        // Bare view only — fields 1-5, per CUJ #4. Deliberately built by
+        // hand rather than via Profile::toJson() so a future field added to
+        // the full profile JSON doesn't silently leak into this endpoint.
+        Json::Value j;
+        j["user_id"] = profile.userId;
+        j["name"] = profile.name;
+        j["sex"] = profile.sex;
+        j["age"] = profile.age;
+        j["need_to_know_text"] = profile.needToKnowText;
+        Json::Value photosJson(Json::arrayValue);
+        for (const auto &photo : profile.photos)
+        {
+            photosJson.append(photo.toJson());
+        }
+        j["photos"] = photosJson;
+
+        callback(jsonResponse(j, k200OK));
+    }
+    catch (const services::NotFoundException &)
+    {
+        callback(errorResponse(k404NotFound, "PROFILE_NOT_FOUND", "No such profile."));
     }
 }
 
