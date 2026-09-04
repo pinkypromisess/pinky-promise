@@ -4,7 +4,9 @@
 
 #include <memory>
 
+#include "auth/SocialTokenVerifier.h"
 #include "notifications/ReminderProvider.h"
+#include "services/AuthService.h"
 #include "services/BlockService.h"
 #include "services/ConversationService.h"
 #include "services/PhotoUploadService.h"
@@ -24,10 +26,19 @@
 // the (few) shared services instead of each owning its own DB client.
 namespace app_context
 {
+// `googleSocialVerifier`/`appleSocialVerifier` added for Module F.2 --
+// AuthService needs one auth::SocialTokenVerifier per provider, injected
+// the same way faceVerificationProvider/photoUploadProvider/
+// reminderProvider already are (real implementations from main.cc, stubs
+// from TestHttpServer.cc). This is the one Module F.2 signature change
+// flagged in that module's brief; every other init() parameter is
+// unchanged.
 void init(drogon::orm::DbClientPtr db,
           std::shared_ptr<verification::FaceVerificationProvider> faceVerificationProvider,
           std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider,
-          std::shared_ptr<notifications::ReminderProvider> reminderProvider);
+          std::shared_ptr<notifications::ReminderProvider> reminderProvider,
+          std::shared_ptr<auth::SocialTokenVerifier> googleSocialVerifier,
+          std::shared_ptr<auth::SocialTokenVerifier> appleSocialVerifier);
 
 services::ProfileService &profileService();
 services::VerificationService &verificationService();
@@ -39,5 +50,6 @@ services::PinkyPromiseService &pinkyPromiseService();
 services::ReminderService &reminderService();
 services::BlockService &blockService();
 services::ReportService &reportService();
+services::AuthService &authService();
 
 }  // namespace app_context

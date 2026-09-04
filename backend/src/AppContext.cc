@@ -16,13 +16,16 @@ std::unique_ptr<services::PinkyPromiseService> pinkyPromiseServiceInstance;
 std::unique_ptr<services::ReminderService> reminderServiceInstance;
 std::unique_ptr<services::BlockService> blockServiceInstance;
 std::unique_ptr<services::ReportService> reportServiceInstance;
+std::unique_ptr<services::AuthService> authServiceInstance;
 
 }  // namespace
 
 void init(drogon::orm::DbClientPtr db,
           std::shared_ptr<verification::FaceVerificationProvider> faceVerificationProvider,
           std::shared_ptr<storage::GcsUploadUrlProvider> photoUploadProvider,
-          std::shared_ptr<notifications::ReminderProvider> reminderProvider)
+          std::shared_ptr<notifications::ReminderProvider> reminderProvider,
+          std::shared_ptr<auth::SocialTokenVerifier> googleSocialVerifier,
+          std::shared_ptr<auth::SocialTokenVerifier> appleSocialVerifier)
 {
     profileServiceInstance = std::make_unique<services::ProfileService>(db);
     proposalServiceInstance = std::make_unique<services::ProposalService>(db);
@@ -33,6 +36,11 @@ void init(drogon::orm::DbClientPtr db,
         std::make_unique<services::ReminderService>(db, std::move(reminderProvider));
     blockServiceInstance = std::make_unique<services::BlockService>(db);
     reportServiceInstance = std::make_unique<services::ReportService>(db);
+    // AuthService needs the DB pool plus one auth::SocialTokenVerifier per
+    // provider (Module F.2) -- constructed from `db` like the other
+    // DB-only services above, still before db's final std::move() below.
+    authServiceInstance = std::make_unique<services::AuthService>(
+        db, std::move(googleSocialVerifier), std::move(appleSocialVerifier));
     verificationServiceInstance = std::make_unique<services::VerificationService>(
         std::move(db), std::move(faceVerificationProvider));
     photoUploadServiceInstance =
@@ -131,6 +139,15 @@ services::ReportService &reportService()
         throw std::runtime_error("app_context::init() was not called before reportService()");
     }
     return *reportServiceInstance;
+}
+
+services::AuthService &authService()
+{
+    if (!authServiceInstance)
+    {
+        throw std::runtime_error("app_context::init() was not called before authService()");
+    }
+    return *authServiceInstance;
 }
 
 }  // namespace app_context

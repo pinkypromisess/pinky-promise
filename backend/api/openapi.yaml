@@ -27,6 +27,7 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: Auth
   - name: Profile
   - name: Verification
   - name: Proposal
@@ -36,6 +37,174 @@ tags:
   - name: Report
 
 paths:
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: Create an account with email + password
+      description: >
+        Module F.1 (email+password auth). Creates a new `users` row and
+        issues a bearer token immediately — there is no separate
+        email-verification step in this MVP. Deliberately NOT behind
+        bearerAuth (`security: []` below): there is no token yet when a
+        client is signing up. Any existing `users.email` match (whether
+        it already has a password set, or is a social-only account from a
+        future signup method) is treated as taken.
+      operationId: signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthCredentialsRequest'
+      responses:
+        '201':
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: >
+            `EMAIL_INVALID` (missing or malformed email) or
+            `PASSWORD_TOO_SHORT` (fewer than 8 characters).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: EMAIL_ALREADY_REGISTERED — an account with this email already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email + password
+      description: >
+        Module F.1 (email+password auth). Deliberately NOT behind
+        bearerAuth (`security: []` below): there is no token yet when a
+        client is logging in. An unknown email, an account with no
+        password set (e.g. a social-only account from a future signup
+        method), and a wrong password are all indistinguishable in the
+        response — same `401 INVALID_CREDENTIALS` — to avoid a
+        user-enumeration vector.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthCredentialsRequest'
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: INVALID_CREDENTIALS — unknown email, no password set, or wrong password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/social/google:
+    post:
+      tags: [Auth]
+      summary: Sign up or log in with a Google id token
+      description: >
+        Module F.2 (social login). `id_token` is the Google-issued OIDC id
+        token from the client's Google Sign-In flow — verified server-side
+        against Google's live JWKS (signature, issuer, audience, expiry),
+        never trusted as-is. Deliberately NOT behind bearerAuth
+        (`security: []` below): there is no token yet when a client is
+        signing up or logging in. Find-or-create by (provider,
+        provider_subject): a first-time subject creates a new `users` row
+        (with no `password_hash`) and an `auth_identities` row in one
+        atomic statement (201); a returning subject reuses its existing
+        `users` row (200). No cross-provider account linking — the same
+        person signing up with Google and, separately, with Apple (even
+        using the same email both times) always gets two distinct `users`
+        rows in this MVP (forward task FT-8).
+      operationId: signupOrLoginWithGoogle
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialLoginRequest'
+      responses:
+        '200':
+          description: Logged in — an auth_identities row for this Google subject already existed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '201':
+          description: Account created — first sign-in for this Google subject.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: >
+            INVALID_SOCIAL_TOKEN — the id token failed verification (bad
+            signature, expired, wrong issuer/audience, malformed, or
+            unsupported algorithm). Failure subtypes are deliberately not
+            distinguished in the response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/social/apple:
+    post:
+      tags: [Auth]
+      summary: Sign up or log in with an Apple identity token
+      description: >
+        Module F.2 (social login). Same contract as
+        `POST /auth/social/google`, verified against Apple's live JWKS
+        instead — `id_token` is the identity token from Sign in with
+        Apple. See that endpoint's description for the find-or-create and
+        no-cross-provider-linking behavior, identical here.
+      operationId: signupOrLoginWithApple
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialLoginRequest'
+      responses:
+        '200':
+          description: Logged in — an auth_identities row for this Apple subject already existed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '201':
+          description: Account created — first sign-in for this Apple subject.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: >
+            INVALID_SOCIAL_TOKEN — the id token failed verification (bad
+            signature, expired, wrong issuer/audience, malformed, or
+            unsupported algorithm). Failure subtypes are deliberately not
+            distinguished in the response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /profile:
     put:
       tags: [Profile]
@@ -917,6 +1086,48 @@ components:
             $ref: '#/components/schemas/Error'
 
   schemas:
+    AuthCredentialsRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: >
+            No composition requirements beyond an 8-character minimum
+            (OWASP/NIST current guidance favors length over forced
+            uppercase/digit/symbol rules for this kind of MVP).
+
+    AuthResponse:
+      type: object
+      required: [token, user_id]
+      properties:
+        token:
+          type: string
+          description: >
+            HS256 JWT, `sub` = user_id. Single long-lived access token
+            (30-day expiry), no refresh-token mechanism — a deliberate MVP
+            simplification.
+        user_id:
+          type: string
+          format: uuid
+
+    SocialLoginRequest:
+      type: object
+      required: [id_token]
+      properties:
+        id_token:
+          type: string
+          description: >
+            The provider-issued OIDC id token (Google) / identity token
+            (Apple) from the client's native sign-in flow. Verified
+            server-side against the provider's live JWKS — never trusted
+            as-is.
+
     Error:
       type: object
       required: [error, message]

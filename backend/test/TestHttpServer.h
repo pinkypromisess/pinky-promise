@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include "../src/auth/StubSocialTokenVerifier.h"
 #include "../src/notifications/StubReminderProvider.h"
 #include "../src/storage/StubGcsUploadUrlProvider.h"
 #include "../src/verification/StubFaceVerificationProvider.h"
@@ -43,6 +44,14 @@ std::shared_ptr<storage::StubGcsUploadUrlProvider> testServerPhotoUploadProvider
 // to assert on what it was asked to send. Only valid after
 // ensureTestServerRunning() has been called at least once.
 std::shared_ptr<notifications::StubReminderProvider> testServerReminderProvider();
+
+// The StubSocialTokenVerifier instances actually wired into the running
+// test server for /v1/auth/social/google and /v1/auth/social/apple
+// respectively (Module F.2). Use setNextIdentity()/setNextFailure() to
+// control the next social-login round trip's outcome from a test. Only
+// valid after ensureTestServerRunning() has been called at least once.
+std::shared_ptr<auth::StubSocialTokenVerifier> testServerGoogleSocialVerifier();
+std::shared_ptr<auth::StubSocialTokenVerifier> testServerAppleSocialVerifier();
 
 // Signs an HS256 JWT with `userId` as the `sub` claim, using the same
 // secret auth::AuthFilter falls back to when JWT_SECRET isn't set
