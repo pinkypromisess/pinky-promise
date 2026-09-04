@@ -89,4 +89,33 @@ void ConversationController::postMessage(
     }
 }
 
+void ConversationController::listMessages(
+    const HttpRequestPtr &req,
+    std::function<void(const HttpResponsePtr &)> &&callback,
+    std::string id)
+{
+    const auto userId = getUserId(req);
+    try
+    {
+        auto messages = app_context::conversationService().listMessages(id, userId);
+
+        Json::Value messagesJson(Json::arrayValue);
+        for (const auto &m : messages)
+        {
+            messagesJson.append(m.toJson());
+        }
+        Json::Value body;
+        body["messages"] = messagesJson;
+        callback(jsonResponse(body, k200OK));
+    }
+    catch (const services::NotFoundException &e)
+    {
+        callback(errorResponse(k404NotFound, "CONVERSATION_NOT_FOUND", e.what()));
+    }
+    catch (const services::ConversationForbiddenException &e)
+    {
+        callback(errorResponse(k403Forbidden, "NOT_A_PARTICIPANT", e.what()));
+    }
+}
+
 }  // namespace controllers

@@ -73,6 +73,16 @@ class ConversationService
                          const std::string &type,
                          const std::string &content);
 
+    // 404 / 403 as above (same participant gate as postMessage/getForUser
+    // — no expiry check, an expired or pinky_promised conversation's
+    // history is still readable). Messages ordered oldest-first
+    // (created_at ASC), matching loadExpiryMessages' ordering. Added for
+    // Frontend Module 3, which otherwise has no way to render a
+    // conversation's message thread at all — C.2 shipped POST but not
+    // GET for this path.
+    std::vector<Message> listMessages(const std::string &conversationId,
+                                       const std::string &userId);
+
   private:
     struct ConversationRow
     {

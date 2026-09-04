@@ -648,3 +648,113 @@ DROGON_TEST(GetConversationByIdAsEitherParticipant)
         FAIL(std::string("HTTP test failed: ") + e.what());
     }
 }
+
+// --- GET /v1/conversations/{id}/messages (manager addition — Frontend
+// Module 3 has no way to render message history without this; C.2
+// shipped POST but never a way to read it back). ---
+
+// CHECKS: messages come back oldest-first, visible to either participant.
+DROGON_TEST(ListMessagesReturnsOrderedHistoryToEitherParticipant)
+{
+    try
+    {
+        auto f = setUpConversation();
+        REQUIRE(postMessage(f.a, f.conversationId, "text", "first").status == k201Created);
+        REQUIRE(postMessage(f.b, f.conversationId, "text", "second").status == k201Created);
+        REQUIRE(postMessage(f.a, f.conversationId, "voice", "https://gcs/voice/3.m4a").status ==
+                k201Created);
+
+        auto asA = sendTestRequest(
+            f.a.baseUrl, Get, "/v1/conversations/" + f.conversationId + "/messages", f.a.token);
+        REQUIRE(asA.status == k200OK);
+        REQUIRE(asA.json["messages"].size() == 3u);
+        CHECK(asA.json["messages"][0]["content"].asString() == "first");
+        CHECK(asA.json["messages"][1]["content"].asString() == "second");
+        CHECK(asA.json["messages"][2]["type"].asString() == "voice");
+
+        auto asB = sendTestRequest(
+            f.b.baseUrl, Get, "/v1/conversations/" + f.conversationId + "/messages", f.b.token);
+        REQUIRE(asB.status == k200OK);
+        CHECK(asB.json["messages"].size() == 3u);
+    }
+    catch (const std::exception &e)
+    {
+        FAIL(std::string("HTTP test failed: ") + e.what());
+    }
+}
+
+// CHECKS: a conversation with no messages yet returns an empty array, not
+// an error.
+DROGON_TEST(ListMessagesOnFreshConversationReturnsEmptyArray)
+{
+    try
+    {
+        auto f = setUpConversation();
+
+        auto resp = sendTestRequest(
+            f.a.baseUrl, Get, "/v1/conversations/" + f.conversationId + "/messages", f.a.token);
+        REQUIRE(resp.status == k200OK);
+        CHECK(resp.json["messages"].isArray());
+        CHECK(resp.json["messages"].empty());
+    }
+    catch (const std::exception &e)
+    {
+        FAIL(std::string("HTTP test failed: ") + e.what());
+    }
+}
+
+// CHECKS: a non-participant gets 403, and reading history is still
+// allowed on an expired conversation (only posting is blocked there —
+// mirrors PostMessageToExpiredRejected409ButPinkyPromisedStillAccepts).
+DROGON_TEST(ListMessagesRejectsNonParticipantButAllowsReadingExpiredHistory)
+{
+    try
+    {
+        auto f = setUpConversation();
+        REQUIRE(postMessage(f.a, f.conversationId, "text", "before expiry").status ==
+                k201Created);
+
+        auto stranger = setUpTestSession();
+        auto forbidden = sendTestRequest(stranger.baseUrl,
+                                          Get,
+                                          "/v1/conversations/" + f.conversationId + "/messages",
+                                          stranger.token);
+        CHECK(forbidden.status == k403Forbidden);
+        CHECK(forbidden.json["error"].asString() == "NOT_A_PARTICIPANT");
+
+        dbSetCreatedAt(f.conversationId, nowEpoch() - 4 * D);
+        auto stillReadable = sendTestRequest(
+            f.a.baseUrl, Get, "/v1/conversations/" + f.conversationId + "/messages", f.a.token);
+        REQUIRE(stillReadable.status == k200OK);
+        CHECK(stillReadable.json["messages"].size() == 1u);
+    }
+    catch (const std::exception &e)
+    {
+        FAIL(std::string("HTTP test failed: ") + e.what());
+    }
+}
+
+DROGON_TEST(ListMessagesUnknownConversationReturns404WithoutAuthReturns401)
+{
+    try
+    {
+        auto s = setUpTestSession();
+        auto notFound = sendTestRequest(s.baseUrl,
+                                         Get,
+                                         "/v1/conversations/00000000-0000-0000-0000-000000000000/"
+                                         "messages",
+                                         s.token);
+        CHECK(notFound.status == k404NotFound);
+
+        auto f = setUpConversation();
+        auto noAuth = sendTestRequest(f.a.baseUrl,
+                                       Get,
+                                       "/v1/conversations/" + f.conversationId + "/messages",
+                                       /*bearerToken=*/"");
+        CHECK(noAuth.status == k401Unauthorized);
+    }
+    catch (const std::exception &e)
+    {
+        FAIL(std::string("HTTP test failed: ") + e.what());
+    }
+}

@@ -565,6 +565,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
 
   /conversations/{id}/messages:
+    get:
+      tags: [Conversation]
+      summary: List a conversation's messages
+      description: >
+        All messages in the conversation, oldest first (`created_at`
+        ASC). Same participant gate as GET /conversations/{id} (403
+        `NOT_A_PARTICIPANT`, 404 for no such conversation). No expiry
+        check — unlike posting, reading history is always allowed
+        regardless of the conversation's computed status. Added for
+        Frontend Module 3: C.2 originally shipped POST for this path but
+        no way to read the history back.
+      operationId: listConversationMessages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The conversation's messages, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageListResponse'
+        '403':
+          description: The caller is not a participant (`NOT_A_PARTICIPANT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
     post:
       tags: [Conversation]
       summary: Post a message to a conversation
@@ -1319,6 +1360,15 @@ components:
         created_at:
           type: string
           format: date-time
+
+    MessageListResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
 
     PinkyPromiseStatus:
       type: string

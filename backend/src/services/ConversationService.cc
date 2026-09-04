@@ -217,4 +217,42 @@ Message ConversationService::postMessage(const std::string &conversationId,
     return msg;
 }
 
+std::vector<Message> ConversationService::listMessages(const std::string &conversationId,
+                                                         const std::string &userId)
+{
+    auto rowOpt = loadConversation(conversationId);
+    if (!rowOpt)
+    {
+        throw NotFoundException("No conversation " + conversationId + ".");
+    }
+    const auto &row = *rowOpt;
+    if (userId != row.proposerUserId && userId != row.interestedUserId)
+    {
+        throw ConversationForbiddenException("You are not a participant in this conversation.");
+    }
+
+    // No expiry gate here (unlike postMessage) — an expired or
+    // pinky_promised conversation's history is still readable, only
+    // *posting* to an expired one is blocked.
+    auto rows = db_->execSqlSync(
+        "SELECT id, conversation_id, sender_user_id, type, content_or_url, created_at "
+        "FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
+        conversationId);
+
+    std::vector<Message> messages;
+    messages.reserve(rows.size());
+    for (const auto &m : rows)
+    {
+        Message msg;
+        msg.id = m["id"].as<std::string>();
+        msg.conversationId = m["conversation_id"].as<std::string>();
+        msg.senderUserId = m["sender_user_id"].as<std::string>();
+        msg.type = m["type"].as<std::string>();
+        msg.content = m["content_or_url"].as<std::string>();
+        msg.createdAt = m["created_at"].as<std::string>();
+        messages.push_back(std::move(msg));
+    }
+    return messages;
+}
+
 }  // namespace services
