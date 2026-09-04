@@ -18,10 +18,11 @@ class SwipeBadRequestException : public std::runtime_error
     std::string code;
 };
 
-// POST /proposals/{id}/swipe -> 403. Either the caller's profile isn't
-// verified (code PROFILE_NOT_VERIFIED) or they've hit the rolling-24h
-// "interested" cap (code INTERESTED_DAILY_CAP_REACHED). Distinct codes so
-// the client can tell "go verify" from "come back later".
+// POST /proposals/{id}/swipe -> 403. The caller's profile isn't verified
+// (code PROFILE_NOT_VERIFIED), they've hit the rolling-24h "interested"
+// cap (code INTERESTED_DAILY_CAP_REACHED), or the swipe is between a
+// blocked pair (code BLOCKED, E.3). Distinct codes so the client can tell
+// "go verify" from "come back later" from "this user is blocked".
 class SwipeForbiddenException : public std::runtime_error
 {
   public:

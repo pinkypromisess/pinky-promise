@@ -5,12 +5,14 @@
 #include <memory>
 
 #include "notifications/ReminderProvider.h"
+#include "services/BlockService.h"
 #include "services/ConversationService.h"
 #include "services/PhotoUploadService.h"
 #include "services/PinkyPromiseService.h"
 #include "services/ProfileService.h"
 #include "services/ProposalService.h"
 #include "services/ReminderService.h"
+#include "services/ReportService.h"
 #include "services/SwipeService.h"
 #include "services/VerificationService.h"
 #include "storage/GcsUploadUrlProvider.h"
@@ -35,5 +37,7 @@ services::SwipeService &swipeService();
 services::ConversationService &conversationService();
 services::PinkyPromiseService &pinkyPromiseService();
 services::ReminderService &reminderService();
+services::BlockService &blockService();
+services::ReportService &reportService();
 
 }  // namespace app_context
